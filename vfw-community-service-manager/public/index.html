@@ -1,122 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Post 10003 Community Service Manager</title>
 <style>
-:root{--navy:#0a3161;--red:#b31942;--gold:#d4af37;--bg:#f4f6f9;--ink:#1f2937;--muted:#6b7280;--line:#d7dde7;--white:#fff;--green:#176b3a;--amber:#9a6500}
-*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink)}
-.top{height:7px;background:linear-gradient(90deg,var(--red) 0 34%,#fff 34% 66%,var(--navy) 66%)}
-header{background:var(--navy);color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-header h1{font-size:1.4rem;margin:0}header small{opacity:.85}.wrap{max-width:1180px;margin:0 auto;padding:24px}
-button,.btn{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}.red{background:var(--red);color:#fff}.navy{background:var(--navy);color:#fff}.gold{background:var(--gold);color:#111827}.gray{background:#e5e7eb;color:#111827}.green{background:var(--green);color:#fff}
-.card{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 3px 12px rgba(0,0,0,.05);padding:20px;margin-bottom:18px}
-.login{max-width:420px;margin:70px auto}.login input{width:100%;padding:12px;border:1px solid #bfc7d4;border-radius:8px;margin:12px 0}.hidden{display:none!important}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}.stat b{display:block;font-size:1.7rem;color:var(--navy)}
-@media(max-width:760px){.stats{grid-template-columns:1fr 1fr}}
-.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{background:#e8edf4}.tab.active{background:var(--navy);color:#fff}
-.report{display:grid;grid-template-columns:1fr auto;gap:14px;border-top:1px solid var(--line);padding:16px 0}.report:first-child{border-top:0}.meta{color:var(--muted);font-size:.9rem}.status{font-size:.78rem;font-weight:800;text-transform:uppercase;padding:5px 8px;border-radius:999px;display:inline-block}.pending{background:#fff3cd;color:#7a5700}.prepared{background:#dbeafe;color:#1e40af}.submitted{background:#dcfce7;color:#166534}.rejected{background:#fee2e2;color:#991b1b}.approved{background:#ede9fe;color:#5b21b6}
-.drawer{position:fixed;right:0;top:0;height:100%;width:min(640px,100%);background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);z-index:20;overflow:auto;padding:22px}.drawer h2{color:var(--navy);margin-top:0}.close{float:right;background:#eee}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{margin:10px 0}.field label{display:block;font-weight:700;font-size:.88rem;margin-bottom:5px}.field input,.field textarea{width:100%;padding:10px;border:1px solid #bdc6d4;border-radius:7px;font:inherit}.field textarea{min-height:90px}.full{grid-column:1/-1}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}.note{background:#eef3f9;border-left:4px solid var(--navy);padding:12px;border-radius:6px;margin:12px 0}.err{background:#fff0f0;border-left:4px solid var(--red);padding:10px;margin:10px 0}.audit{font-size:.87rem}.audit div{padding:7px 0;border-top:1px solid #eee}.screenshot{width:100%;border:1px solid var(--line);border-radius:8px;margin-top:10px}
-</style>
-</head>
-<body>
-<div class="top"></div>
-<div id="loginView" class="login card">
-  <h2>Post 10003 Community Service Manager</h2>
-  <p>Private review dashboard</p>
-  <input id="password" type="password" placeholder="Admin password">
-  <button class="navy" onclick="login()">Sign In</button>
-  <div id="loginError" class="err hidden"></div>
-</div>
-
-<div id="appView" class="hidden">
-<header>
-  <div><h1>VFW Post 10003 Community Service Manager</h1><small>Human approval before official state reporting</small></div>
-  <div><button class="gray" onclick="logout()">Log Out</button></div>
-</header>
-<div class="wrap">
-  <div class="stats">
-    <div class="stat"><span>Pending</span><b id="sPending">0</b></div>
-    <div class="stat"><span>Prepared</span><b id="sPrepared">0</b></div>
-    <div class="stat"><span>Submitted</span><b id="sSubmitted">0</b></div>
-    <div class="stat"><span>Total Hours</span><b id="sHours">0</b></div>
-  </div>
-
-  <div class="card" style="margin-top:18px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-      <div><h2 style="margin:0;color:var(--navy)">Reports</h2><div class="meta">Review, edit, approve, reject, and track each submission.</div></div>
-      <button class="gold" onclick="seed()">Add Test Report</button>
-    </div>
-    <div class="tabs" style="margin-top:16px">
-      <button class="tab active" data-status="pending" onclick="setTab('pending',this)">Pending</button>
-      <button class="tab" data-status="prepared" onclick="setTab('prepared',this)">Prepared</button>
-      <button class="tab" data-status="submitted" onclick="setTab('submitted',this)">Submitted</button>
-      <button class="tab" data-status="rejected" onclick="setTab('rejected',this)">Rejected</button>
-      <button class="tab" data-status="all" onclick="setTab('all',this)">All</button>
-    </div>
-    <div id="reports"></div>
-  </div>
-</div>
-</div>
-
-<div id="drawer" class="drawer hidden">
-<button class="close" onclick="closeDrawer()">Close</button>
-<div id="detail"></div>
-</div>
-
+:root{--navy:#0a3161;--red:#b31942;--gold:#d4af37;--bg:#f4f6f9;--ink:#1f2937;--muted:#6b7280;--line:#d7dde7;--green:#176b3a}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink)}.top{height:7px;background:linear-gradient(90deg,var(--red) 0 34%,#fff 34% 66%,var(--navy) 66%)}header{background:var(--navy);color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}header h1{font-size:1.4rem;margin:0}header small{opacity:.85}.wrap{max-width:1180px;margin:0 auto;padding:24px}button{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}.red{background:var(--red);color:#fff}.navy{background:var(--navy);color:#fff}.gold{background:var(--gold);color:#111827}.gray{background:#e5e7eb;color:#111827}.card{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 3px 12px rgba(0,0,0,.05);padding:20px;margin-bottom:18px}.login{max-width:420px;margin:70px auto}.login input{width:100%;padding:12px;border:1px solid #bfc7d4;border-radius:8px;margin:12px 0}.hidden{display:none!important}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}.stat b{display:block;font-size:1.7rem;color:var(--navy)}@media(max-width:760px){.stats{grid-template-columns:1fr 1fr}}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{background:#e8edf4}.tab.active{background:var(--navy);color:#fff}.report{display:grid;grid-template-columns:1fr auto;gap:14px;border-top:1px solid var(--line);padding:16px 0}.report:first-child{border-top:0}.meta{color:var(--muted);font-size:.9rem}.status{font-size:.78rem;font-weight:800;text-transform:uppercase;padding:5px 8px;border-radius:999px;display:inline-block}.pending{background:#fff3cd;color:#7a5700}.approved{background:#ede9fe;color:#5b21b6}.prepared{background:#dbeafe;color:#1e40af}.submitted{background:#dcfce7;color:#166534}.rejected{background:#fee2e2;color:#991b1b}.drawer{position:fixed;right:0;top:0;height:100%;width:min(640px,100%);background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.18);z-index:20;overflow:auto;padding:22px}.drawer h2{color:var(--navy);margin-top:0}.close{float:right;background:#eee}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{margin:10px 0}.field label{display:block;font-weight:700;font-size:.88rem;margin-bottom:5px}.field input,.field textarea{width:100%;padding:10px;border:1px solid #bdc6d4;border-radius:7px;font:inherit}.field textarea{min-height:90px}.full{grid-column:1/-1}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}.note{background:#eef3f9;border-left:4px solid var(--navy);padding:12px;border-radius:6px;margin:12px 0}.err{background:#fff0f0;border-left:4px solid var(--red);padding:10px;margin:10px 0}.audit{font-size:.87rem}.audit div{padding:7px 0;border-top:1px solid #eee}
+</style></head><body><div class="top"></div>
+<div id="loginView" class="login card"><h2>Post 10003 Community Service Manager</h2><p>Private review dashboard</p><input id="password" type="password" placeholder="Admin password"><button class="navy" onclick="login()">Sign In</button><div id="loginError" class="err hidden"></div></div>
+<div id="appView" class="hidden"><header><div><h1>VFW Post 10003 Community Service Manager</h1><small>Human approval before official state reporting</small></div><button class="gray" onclick="logout()">Log Out</button></header><div class="wrap"><div class="stats"><div class="stat"><span>Pending</span><b id="sPending">0</b></div><div class="stat"><span>Approved / Queued</span><b id="sApproved">0</b></div><div class="stat"><span>Submitted</span><b id="sSubmitted">0</b></div><div class="stat"><span>Total Hours</span><b id="sHours">0</b></div></div><div class="card" style="margin-top:18px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><h2 style="margin:0;color:var(--navy)">Reports</h2><div class="meta">Review, edit, approve, reject, and track each submission.</div></div><button class="gold" onclick="seed()">Add Test Report</button></div><div class="tabs" style="margin-top:16px"><button class="tab active" onclick="setTab('pending',this)">Pending</button><button class="tab" onclick="setTab('approved',this)">Approved / Queued</button><button class="tab" onclick="setTab('submitted',this)">Submitted</button><button class="tab" onclick="setTab('rejected',this)">Rejected</button><button class="tab" onclick="setTab('all',this)">All</button></div><div id="reports"></div></div></div></div>
+<div id="drawer" class="drawer hidden"><button class="close" onclick="closeDrawer()">Close</button><div id="detail"></div></div>
 <script>
 let currentStatus='pending';
-async function api(url,options={}){
-  const r=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});
-  const data=await r.json().catch(()=>({}));
-  if(r.status===401 && url!='/api/login'){showLogin('Your secure session expired or the server restarted. Please sign in again.');throw new Error('Session expired — please sign in again.')}
-  if(!r.ok)throw new Error(data.error||'Request failed');
-  return data
-}
-function showLogin(message=''){
-  document.getElementById('appView').classList.add('hidden');
-  document.getElementById('loginView').classList.remove('hidden');
-  const el=document.getElementById('loginError');
-  if(message){el.textContent=message;el.classList.remove('hidden')}else{el.classList.add('hidden')}
-}
-async function check(){try{const me=await api('/api/me');if(me.authenticated){showApp();loadAll()}else{showLogin()}}catch(e){showLogin('Please sign in.')}}
-async function login(){try{await api('/api/login',{method:'POST',body:JSON.stringify({password:document.getElementById('password').value})});showApp();loadAll()}catch(e){const el=document.getElementById('loginError');el.textContent=e.message;el.classList.remove('hidden')}}
-async function logout(){await api('/api/logout',{method:'POST'});location.reload()}
-function showApp(){document.getElementById('loginView').classList.add('hidden');document.getElementById('appView').classList.remove('hidden')}
-async function loadAll(){await Promise.all([loadStats(),loadReports()])}
-async function loadStats(){const s=await api('/api/stats');sPending.textContent=s.pending||0;sPrepared.textContent=s.prepared||0;sSubmitted.textContent=s.submitted||0;sHours.textContent=Number(s.hours||0).toFixed(1)}
-function setTab(status,el){currentStatus=status;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');loadReports()}
-function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-async function loadReports(){const rows=await api('/api/reports?status='+encodeURIComponent(currentStatus));const box=document.getElementById('reports');if(!rows.length){box.innerHTML='<p class="meta">No reports in this category.</p>';return}box.innerHTML=rows.map(r=>`<div class="report"><div><div><span class="status ${esc(r.status)}">${esc(r.status)}</span> <strong>${esc(r.submitter_name)}</strong> — ${esc(r.organization_or_community)}</div><div class="meta">${esc(r.date_of_service)} • ${Number(r.volunteer_hours).toFixed(2)} hrs • ${Number(r.miles_traveled||0)} mi • $${Number(r.money_or_donations||0).toFixed(2)} • ${Number(r.vfw_members_participating||1)} member(s)</div><div style="margin-top:6px">${esc(r.activity_description).slice(0,220)}</div>${r.last_error?`<div class="err">${esc(r.last_error)}</div>`:''}</div><div><button class="navy" onclick="openReport(${r.id})">Review</button></div></div>`).join('')}
-async function openReport(id){const data=await api('/api/reports/'+id);const r=data.report;const d=document.getElementById('detail');d.innerHTML=`<h2>Report #${r.id}</h2><div class="note"><strong>Status:</strong> <span class="status ${esc(r.status)}">${esc(r.status)}</span><br><strong>Received:</strong> ${esc(r.created_at)}</div>
-<div class="grid">
-<div class="field"><label>Name</label><input id="f_name" value="${esc(r.submitter_name)}"></div>
-<div class="field"><label>Email</label><input id="f_email" value="${esc(r.submitter_email||'')}"></div>
-<div class="field"><label>Date of Service</label><input id="f_date" type="date" value="${esc(r.date_of_service)}"></div>
-<div class="field"><label>Organization / Community</label><input id="f_org" value="${esc(r.organization_or_community)}"></div>
-<div class="field"><label>Hours</label><input id="f_hours" type="number" step="0.25" value="${r.volunteer_hours}"></div>
-<div class="field"><label>Miles</label><input id="f_miles" type="number" value="${r.miles_traveled||0}"></div>
-<div class="field"><label>Dollars</label><input id="f_money" type="number" step="0.01" value="${r.money_or_donations||0}"></div>
-<div class="field"><label>VFW Members</label><input id="f_members" type="number" min="1" value="${r.vfw_members_participating||1}"></div>
-<div class="field full"><label>Original Description</label><textarea id="f_activity">${esc(r.activity_description)}</textarea></div>
-<div class="field full"><label>Proposed Indiana Description</label><textarea id="f_proposed">${esc(r.proposed_description||'')}</textarea></div>
-<div class="field full"><label>Organization Contact / Verifier</label><input id="f_verifier" value="${esc(r.organization_contact_or_verifier||'')}"></div>
-<div class="field full"><label>Additional Notes</label><textarea id="f_notes">${esc(r.additional_notes||'')}</textarea></div>
-<div class="field full"><label>Reviewer Notes</label><textarea id="f_review">${esc(r.reviewer_notes||'')}</textarea></div>
-</div>
-${r.prepared_screenshot?`<div class="note"><strong>Prepared state-form screenshot</strong><br><a href="${esc(r.prepared_screenshot)}" target="_blank">Open full screenshot</a><img class="screenshot" src="${esc(r.prepared_screenshot)}"></div>`:''}
-${r.state_result?`<div class="note"><strong>State result:</strong> ${esc(r.state_result)}</div>`:''}
-${r.last_error?`<div class="err"><strong>Last automation error:</strong> ${esc(r.last_error)}</div>`:''}
-<div class="actions"><button class="navy" onclick="saveReport(${r.id})">Save Changes</button>${r.status!=='submitted'?`<button class="red" onclick="approve(${r.id})">APPROVE & PREPARE VFW SUBMISSION</button>`:''}${r.status!=='rejected'&&r.status!=='submitted'?`<button class="gray" onclick="rejectReport(${r.id})">Reject</button>`:''}${r.status==='rejected'||r.status==='prepared'?`<button class="gold" onclick="resetReport(${r.id})">Return to Pending</button>`:''}</div>
-<h3 style="margin-top:26px;color:var(--navy)">Audit Trail</h3><div class="audit">${data.audit.map(a=>`<div><strong>${esc(a.action)}</strong> — ${esc(a.created_at)}<br>${esc(a.details||'')}</div>`).join('')}</div>`;document.getElementById('drawer').classList.remove('hidden')}
-function closeDrawer(){document.getElementById('drawer').classList.add('hidden')}
-async function saveReport(id){const body={submitter_name:f_name.value,submitter_email:f_email.value,date_of_service:f_date.value,organization_or_community:f_org.value,volunteer_hours:Number(f_hours.value),miles_traveled:Number(f_miles.value),money_or_donations:Number(f_money.value),vfw_members_participating:Number(f_members.value),activity_description:f_activity.value,proposed_description:f_proposed.value,organization_contact_or_verifier:f_verifier.value,additional_notes:f_notes.value,reviewer_notes:f_review.value};await api('/api/reports/'+id,{method:'PUT',body:JSON.stringify(body)});alert('Saved');openReport(id);loadAll()}
-async function approve(id){if(!confirm('Approve this report and prepare the official Indiana VFW form? In dry-run mode, the Indiana SUBMIT button will NOT be clicked.'))return;try{const result=await api('/api/reports/'+id+'/approve',{method:'POST',body:'{}'});alert(result.message);await openReport(id);loadAll()}catch(e){alert(e.message);await openReport(id);loadAll()}}
-async function rejectReport(id){const reason=prompt('Reason for rejection:','Does not qualify / needs clarification');if(reason===null)return;await api('/api/reports/'+id+'/reject',{method:'POST',body:JSON.stringify({reason})});closeDrawer();loadAll()}
-async function resetReport(id){await api('/api/reports/'+id+'/reset',{method:'POST',body:'{}'});closeDrawer();loadAll()}
-async function seed(){try{await api('/api/dev/seed',{method:'POST',body:'{}'});loadAll()}catch(e){alert(e.message)}}
-check();
-</script>
-</body>
-</html>
+async function api(url,options={}){const r=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const data=await r.json().catch(()=>({}));if(r.status===401&&url!='/api/login'){showLogin('Your secure session expired or the server restarted. Please sign in again.');throw new Error('Session expired — please sign in again.')}if(!r.ok)throw new Error(data.error||'Request failed');return data}
+function showLogin(message=''){appView.classList.add('hidden');loginView.classList.remove('hidden');if(message){loginError.textContent=message;loginError.classList.remove('hidden')}else loginError.classList.add('hidden')}
+async function check(){try{const me=await api('/api/me');if(me.authenticated){showApp();loadAll()}else showLogin()}catch(e){showLogin('Please sign in.')}}async function login(){try{await api('/api/login',{method:'POST',body:JSON.stringify({password:password.value})});showApp();loadAll()}catch(e){loginError.textContent=e.message;loginError.classList.remove('hidden')}}async function logout(){await api('/api/logout',{method:'POST'});location.reload()}function showApp(){loginView.classList.add('hidden');appView.classList.remove('hidden')}async function loadAll(){await Promise.all([loadStats(),loadReports()])}async function loadStats(){const s=await api('/api/stats');sPending.textContent=s.pending||0;sApproved.textContent=s.approved||0;sSubmitted.textContent=s.submitted||0;sHours.textContent=Number(s.hours||0).toFixed(1)}function setTab(status,el){currentStatus=status;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');loadReports()}function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+async function loadReports(){const rows=await api('/api/reports?status='+encodeURIComponent(currentStatus));if(!rows.length){reports.innerHTML='<p class="meta">No reports in this category.</p>';return}reports.innerHTML=rows.map(r=>`<div class="report"><div><div><span class="status ${esc(r.status)}">${esc(r.status)}</span> <strong>${esc(r.submitter_name)}</strong> — ${esc(r.organization_or_community)}</div><div class="meta">${esc(r.date_of_service)} • ${Number(r.volunteer_hours).toFixed(2)} hrs • ${Number(r.miles_traveled||0)} mi • $${Number(r.money_or_donations||0).toFixed(2)} • ${Number(r.vfw_members_participating||1)} member(s)</div><div style="margin-top:6px">${esc(r.activity_description).slice(0,220)}</div>${r.last_error?`<div class="err">${esc(r.last_error)}</div>`:''}</div><button class="navy" onclick="openReport(${r.id})">Review</button></div>`).join('')}
+async function openReport(id){const data=await api('/api/reports/'+id),r=data.report;detail.innerHTML=`<h2>Report #${r.id}</h2><div class="note"><strong>Status:</strong> <span class="status ${esc(r.status)}">${esc(r.status)}</span><br><strong>Received:</strong> ${esc(r.created_at)}</div><div class="grid"><div class="field"><label>Name</label><input id="f_name" value="${esc(r.submitter_name)}"></div><div class="field"><label>Email</label><input id="f_email" value="${esc(r.submitter_email||'')}"></div><div class="field"><label>Date of Service</label><input id="f_date" type="date" value="${esc(r.date_of_service)}"></div><div class="field"><label>Organization / Community</label><input id="f_org" value="${esc(r.organization_or_community)}"></div><div class="field"><label>Hours</label><input id="f_hours" type="number" step="0.25" value="${r.volunteer_hours}"></div><div class="field"><label>Miles</label><input id="f_miles" type="number" value="${r.miles_traveled||0}"></div><div class="field"><label>Dollars</label><input id="f_money" type="number" step="0.01" value="${r.money_or_donations||0}"></div><div class="field"><label>VFW Members</label><input id="f_members" type="number" min="1" value="${r.vfw_members_participating||1}"></div><div class="field full"><label>Original Description</label><textarea id="f_activity">${esc(r.activity_description)}</textarea></div><div class="field full"><label>Proposed Indiana Description</label><textarea id="f_proposed">${esc(r.proposed_description||'')}</textarea></div><div class="field full"><label>Organization Contact / Verifier</label><input id="f_verifier" value="${esc(r.organization_contact_or_verifier||'')}"></div><div class="field full"><label>Additional Notes</label><textarea id="f_notes">${esc(r.additional_notes||'')}</textarea></div><div class="field full"><label>Reviewer Notes</label><textarea id="f_review">${esc(r.reviewer_notes||'')}</textarea></div></div>${r.state_result?`<div class="note"><strong>VFW submission:</strong> ${esc(r.state_result)}${r.state_confirmation?`<br>${esc(r.state_confirmation)}`:''}</div>`:''}${r.last_error?`<div class="err"><strong>Local agent error:</strong> ${esc(r.last_error)}</div>`:''}<div class="actions"><button class="navy" onclick="saveReport(${r.id})">Save Changes</button>${r.status==='pending'?`<button class="red" onclick="approve(${r.id})">APPROVE FOR VFW SUBMISSION</button>`:''}${r.status!=='rejected'&&r.status!=='submitted'?`<button class="gray" onclick="rejectReport(${r.id})">Reject</button>`:''}${r.status==='rejected'||r.status==='approved'?`<button class="gold" onclick="resetReport(${r.id})">Return to Pending</button>`:''}</div><h3 style="margin-top:26px;color:var(--navy)">Audit Trail</h3><div class="audit">${data.audit.map(a=>`<div><strong>${esc(a.action)}</strong> — ${esc(a.created_at)}<br>${esc(a.details||'')}</div>`).join('')}</div>`;drawer.classList.remove('hidden')}
+function closeDrawer(){drawer.classList.add('hidden')}async function saveReport(id){const body={submitter_name:f_name.value,submitter_email:f_email.value,date_of_service:f_date.value,organization_or_community:f_org.value,volunteer_hours:Number(f_hours.value),miles_traveled:Number(f_miles.value),money_or_donations:Number(f_money.value),vfw_members_participating:Number(f_members.value),activity_description:f_activity.value,proposed_description:f_proposed.value,organization_contact_or_verifier:f_verifier.value,additional_notes:f_notes.value,reviewer_notes:f_review.value};await api('/api/reports/'+id,{method:'PUT',body:JSON.stringify(body)});alert('Saved');openReport(id);loadAll()}async function approve(id){if(!confirm('Approve this report for submission by your Windows VFW Submit Agent?'))return;try{const result=await api('/api/reports/'+id+'/approve',{method:'POST',body:'{}'});alert(result.message);await openReport(id);loadAll()}catch(e){alert(e.message);await openReport(id);loadAll()}}async function rejectReport(id){const reason=prompt('Reason for rejection:','Does not qualify / needs clarification');if(reason===null)return;await api('/api/reports/'+id+'/reject',{method:'POST',body:JSON.stringify({reason})});closeDrawer();loadAll()}async function resetReport(id){await api('/api/reports/'+id+'/reset',{method:'POST',body:'{}'});closeDrawer();loadAll()}async function seed(){try{await api('/api/dev/seed',{method:'POST',body:'{}'});loadAll()}catch(e){alert(e.message)}}check();
+</script></body></html>
