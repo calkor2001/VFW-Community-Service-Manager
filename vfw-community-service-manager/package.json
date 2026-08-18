@@ -1,0 +1,20 @@
+{
+  "name": "vfw-post-10003-community-service-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Human-in-the-loop community service reporting manager for VFW Post 10003.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "install-browser": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "playwright": "^1.51.1"
+  }
+}
