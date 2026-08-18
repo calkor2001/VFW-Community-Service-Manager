@@ -4,11 +4,22 @@ const { chromium } = require('playwright');
 const MANAGER_URL = String(process.env.MANAGER_URL || '').replace(/\/$/, '');
 const AGENT_TOKEN = String(process.env.LOCAL_AGENT_TOKEN || '');
 const POLL_SECONDS = Math.max(15, Number(process.env.POLL_SECONDS || 30));
+const VFW_MEMBER_ID = String(process.env.VFW_MEMBER_ID || '');
+const VFW_PASSWORD = String(process.env.VFW_PASSWORD || '');
+const VFW_SUBMITTER_EMAIL = String(process.env.VFW_SUBMITTER_EMAIL || 'vfwcarmel@yahoo.com');
+const MEMBERS_URL = 'https://vfwin.org/di/vfw/v2/default.asp?nid=10';
+const REPORTING_URL = 'https://vfwin.org/di/vfw/v2/default.asp?nid=10&cmr=INCSR#c';
 
 if (!MANAGER_URL || !AGENT_TOKEN) {
   console.error('MANAGER_URL and LOCAL_AGENT_TOKEN are required in .env');
   process.exit(1);
 }
+if (!VFW_MEMBER_ID || !VFW_PASSWORD) {
+  console.error('VFW_MEMBER_ID and VFW_PASSWORD are required in the local .env file.');
+  process.exit(1);
+}
+
+let busy = false;
 
 async function manager(path, options = {}) {
   const r = await fetch(MANAGER_URL + path, {
@@ -22,39 +33,222 @@ async function manager(path, options = {}) {
 }
 
 async function reportError(id, err) {
-  try { await manager(`/api/agent/reports/${id}/error`, { method:'POST', body:JSON.stringify({ error: err.message || String(err) }) }); } catch (_) {}
+  try {
+    await manager(`/api/agent/reports/${id}/error`, {
+      method: 'POST',
+      body: JSON.stringify({ error: err.message || String(err) })
+    });
+  } catch (_) {}
 }
 
-async function submitToVfw(report) {
-  // This intentionally uses a visible, installed Chrome on the user's Windows PC.
-  // The next setup step will map the live VFW Indiana form fields after a successful local login.
+async function firstVisible(locators) {
+  for (const locator of locators) {
+    try {
+      if ((await locator.count()) > 0 && (await locator.first().isVisible())) return locator.first();
+    } catch (_) {}
+  }
+  return null;
+}
+
+async function login(page) {
+  console.log('Opening VFW Indiana Members Only page...');
+  await page.goto(MEMBERS_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForTimeout(800);
+
+  const password = await firstVisible([
+    page.locator('input[name="password"]'),
+    page.locator('input[type="password"]')
+  ]);
+
+  // If there is no password box and Program Reporting is present, this browser session is already authenticated.
+  if (!password) {
+    const programLink = page.getByText('Program Reporting', { exact: true });
+    if ((await programLink.count()) > 0) {
+      console.log('Existing authenticated VFW Indiana session detected.');
+      return;
+    }
+    throw new Error('Could not find the VFW login form or an authenticated member page.');
+  }
+
+  const form = password.locator('xpath=ancestor::form[1]');
+  const username = await firstVisible([
+    form.locator('input[name="username"]'),
+    form.locator('input[type="text"]')
+  ]);
+  const loginButton = await firstVisible([
+    form.locator('input[type="image"][name="login"]'),
+    form.locator('input[type="image"]'),
+    form.locator('input[type="submit"]')
+  ]);
+
+  if (!username || !loginButton) throw new Error('Could not map the VFW Indiana login controls.');
+
+  await username.fill(VFW_MEMBER_ID);
+  await password.fill(VFW_PASSWORD);
+  console.log('VFW credentials entered locally.');
+
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
+    loginButton.click({ position: { x: 5, y: 5 } })
+  ]);
+  await page.waitForTimeout(1200);
+
+  const body = await page.locator('body').innerText();
+  if (/500\s*-?\s*internal server error/i.test(body)) throw new Error('VFW Indiana returned an HTTP 500 during local login.');
+  if (/invalid.*password|incorrect.*password|login failed|invalid.*member/i.test(body)) throw new Error('VFW Indiana rejected the local login credentials.');
+
+  const programLink = page.getByText('Program Reporting', { exact: true });
+  if ((await programLink.count()) === 0) throw new Error('Local VFW login completed, but Program Reporting was not found.');
+  console.log('VFW Indiana login successful.');
+}
+
+async function openReporting(page) {
+  console.log('Opening Program Reporting...');
+  await page.goto(REPORTING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForTimeout(1000);
+  const body = await page.locator('body').innerText();
+  if (!/VFW Department of Indiana\s+Program Reporting/i.test(body) && !/Program Reporting/i.test(body)) {
+    throw new Error('Program Reporting page did not load as expected.');
+  }
+}
+
+async function fillReportingForm(page, report) {
+  const selects = page.locator('select');
+  if ((await selects.count()) >= 1) {
+    try { if (String(await selects.nth(0).inputValue()) !== '10003') await selects.nth(0).selectOption('10003'); } catch (_) {}
+  }
+  if ((await selects.count()) >= 2) {
+    try { if (String(await selects.nth(1).inputValue()) !== '6') await selects.nth(1).selectOption('6'); } catch (_) {}
+  }
+
+  let email = await firstVisible([
+    page.getByLabel(/submitter email/i),
+    page.locator('input[type="email"]'),
+    page.locator('input[name*="email" i]'),
+    page.locator('input[id*="email" i]')
+  ]);
+
+  const visibleTextInputs = page.locator('input[type="text"]:visible');
+  if (!email && (await visibleTextInputs.count()) > 0) email = visibleTextInputs.nth(0);
+  if (!email) throw new Error('Could not locate Submitter Email field.');
+  await email.fill(VFW_SUBMITTER_EMAIL);
+
+  const date = await firstVisible([
+    page.getByLabel(/date of activity/i),
+    page.locator('input[type="date"]')
+  ]);
+  if (!date) throw new Error('Could not locate Date of Activity field.');
+  await date.fill(String(report.date_of_service || ''));
+
+  const radio = await firstVisible([
+    page.getByRole('radio', { name: /community service/i }),
+    page.locator('input[type="radio"]')
+  ]);
+  if (!radio) throw new Error('Could not locate Community Service program radio button.');
+  try { await radio.check(); } catch (_) { await radio.click(); }
+
+  let hours = await firstVisible([
+    page.getByLabel(/cumulative hours/i),
+    page.locator('input[name*="hour" i]'),
+    page.locator('input[id*="hour" i]')
+  ]);
+  let miles = await firstVisible([
+    page.getByLabel(/^miles/i),
+    page.locator('input[name*="mile" i]'),
+    page.locator('input[id*="mile" i]')
+  ]);
+  let members = await firstVisible([
+    page.getByLabel(/^members/i),
+    page.locator('input[name*="member" i]'),
+    page.locator('input[id*="member" i]')
+  ]);
+  let dollars = await firstVisible([
+    page.getByLabel(/dollars.*spent|dollars.*donated|spent.*donated/i),
+    page.locator('input[name*="dollar" i]'),
+    page.locator('input[id*="dollar" i]')
+  ]);
+
+  const numberInputs = page.locator('input[type="number"]:visible');
+  if (!hours && (await numberInputs.count()) >= 1) hours = numberInputs.nth(0);
+  if (!miles && (await numberInputs.count()) >= 2) miles = numberInputs.nth(1);
+  if (!members && (await numberInputs.count()) >= 3) members = numberInputs.nth(2);
+  if (!dollars && (await numberInputs.count()) >= 4) dollars = numberInputs.nth(3);
+
+  // Older versions of this form may use ordinary text inputs for the four numeric fields.
+  if (!hours || !miles || !members || !dollars) {
+    const textInputs = page.locator('input[type="text"]:visible');
+    const count = await textInputs.count();
+    // first text input is Submitter Email; numeric fields follow it in the form.
+    if (!hours && count >= 2) hours = textInputs.nth(1);
+    if (!miles && count >= 3) miles = textInputs.nth(2);
+    if (!members && count >= 4) members = textInputs.nth(3);
+    if (!dollars && count >= 5) dollars = textInputs.nth(4);
+  }
+
+  if (!hours || !miles || !members || !dollars) throw new Error('Could not map all four numeric Program Reporting fields.');
+
+  await hours.fill(String(report.volunteer_hours ?? 0));
+  await miles.fill(String(report.miles_traveled ?? 0));
+  await members.fill(String(report.vfw_members_participating ?? 1));
+  await dollars.fill(String(report.money_or_donations ?? 0));
+
+  const description = await firstVisible([
+    page.getByLabel(/description/i),
+    page.locator('textarea')
+  ]);
+  if (!description) throw new Error('Could not locate Description field.');
+  await description.fill(String(report.proposed_description || report.activity_description || ''));
+
+  // Safety check: locate SUBMIT but never click it in this dry-run version.
+  const submit = await firstVisible([
+    page.getByRole('button', { name: /^submit$/i }),
+    page.locator('input[type="submit"]'),
+    page.locator('button[type="submit"]')
+  ]);
+  if (!submit) throw new Error('Program Reporting form was filled, but the final SUBMIT control could not be located.');
+
+  console.log('VFW Indiana form populated successfully. FINAL SUBMIT WAS NOT CLICKED.');
+}
+
+async function prepareInVfw(report) {
   const browser = await chromium.launch({ channel: 'chrome', headless: false });
-  const context = await browser.newContext();
+  const context = await browser.newContext({ viewport: null });
   const page = await context.newPage();
+
   try {
-    console.log(`Opening VFW Indiana locally for approved report #${report.id}...`);
-    await page.goto('https://vfwin.org/di/vfw/v2/default.asp?nid=10', { waitUntil:'domcontentloaded', timeout:60000 });
-    console.log('Chrome is open locally. This first agent version stops before entering credentials or submitting data.');
-    console.log('Once local connectivity/login is confirmed, the form mapping can be completed safely.');
-    await page.waitForTimeout(15000);
-    throw new Error('LOCAL_AGENT_SETUP_REQUIRED: Local Chrome launch succeeded. VFW login/form mapping still needs to be completed before automatic submission is enabled.');
+    console.log(`Preparing VFW Indiana form locally for report #${report.id}...`);
+    await login(page);
+    await openReporting(page);
+    await fillReportingForm(page, report);
+
+    await manager(`/api/agent/reports/${report.id}/prepared`, {
+      method: 'POST',
+      body: JSON.stringify({ note: 'VFW Indiana form populated locally. Awaiting human review; final SUBMIT was not clicked.' })
+    });
+
+    console.log(`Report #${report.id} marked PREPARED in the dashboard.`);
+    console.log('Review the populated VFW form in Chrome. Close that Chrome window when you are finished reviewing it.');
+
+    await new Promise(resolve => browser.on('disconnected', resolve));
   } finally {
-    await browser.close();
+    try { if (browser.isConnected()) await browser.close(); } catch (_) {}
   }
 }
 
 async function tick() {
+  if (busy) return;
+  busy = true;
   let job;
   try {
     job = await manager('/api/agent/next');
     if (!job) return;
     console.log(`Found approved report #${job.report.id}: ${job.report.submitter_name}`);
-    await submitToVfw(job.report);
-    await manager(`/api/agent/reports/${job.report.id}/submitted`, { method:'POST', body:JSON.stringify({ confirmation:'Submitted from local Windows agent.' }) });
-    console.log(`Report #${job.report.id} marked submitted.`);
+    await prepareInVfw(job.report);
   } catch (err) {
     console.error(err.message || err);
     if (job && job.report) await reportError(job.report.id, err);
+  } finally {
+    busy = false;
   }
 }
 
