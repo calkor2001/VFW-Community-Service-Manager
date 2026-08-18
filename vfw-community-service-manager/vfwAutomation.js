@@ -24,7 +24,6 @@ const ALLOW_FINAL_SUBMIT =
   String(process.env.VFW_ALLOW_FINAL_SUBMIT || 'false').toLowerCase() ===
   'true';
 
-
 /*
 |--------------------------------------------------------------------------
 | ENVIRONMENT VALIDATION
@@ -33,12 +32,9 @@ const ALLOW_FINAL_SUBMIT =
 
 function requireEnv(name, value) {
   if (!value) {
-    throw new Error(
-      `${name} environment variable is not configured.`
-    );
+    throw new Error(`${name} environment variable is not configured.`);
   }
 }
-
 
 /*
 |--------------------------------------------------------------------------
@@ -56,28 +52,12 @@ async function firstVisible(locators) {
         return locator.first();
       }
     } catch (_) {
-      // Try the next locator.
+      // Try next locator
     }
   }
 
   return null;
 }
-
-
-async function fillFirst(page, description, locators, value) {
-  const locator = await firstVisible(locators);
-
-  if (!locator) {
-    throw new Error(
-      `Could not find field: ${description}`
-    );
-  }
-
-  await locator.fill(String(value ?? ''));
-
-  return locator;
-}
-
 
 /*
 |--------------------------------------------------------------------------
@@ -86,10 +66,7 @@ async function fillFirst(page, description, locators, value) {
 */
 
 async function screenshot(page, reportId, suffix) {
-  const dir = path.join(
-    __dirname,
-    'screenshots'
-  );
+  const dir = path.join(__dirname, 'screenshots');
 
   fs.mkdirSync(dir, {
     recursive: true
@@ -98,10 +75,7 @@ async function screenshot(page, reportId, suffix) {
   const filename =
     `report-${reportId}-${suffix}-${Date.now()}.png`;
 
-  const fullPath = path.join(
-    dir,
-    filename
-  );
+  const fullPath = path.join(dir, filename);
 
   await page.screenshot({
     path: fullPath,
@@ -111,145 +85,55 @@ async function screenshot(page, reportId, suffix) {
   return `/screenshots/${filename}`;
 }
 
-
 /*
 |--------------------------------------------------------------------------
-| VFW INDIANA LOGIN
+| LOGIN
 |--------------------------------------------------------------------------
 */
 
 async function login(page) {
-  requireEnv(
-    'VFW_MEMBERS_URL',
-    MEMBERS_URL
-  );
+  requireEnv('VFW_MEMBERS_URL', MEMBERS_URL);
+  requireEnv('VFW_MEMBER_ID', MEMBER_ID);
+  requireEnv('VFW_PASSWORD', PASSWORD);
 
-  requireEnv(
-    'VFW_MEMBER_ID',
-    MEMBER_ID
-  );
+  console.log('Opening VFW Indiana login page...');
 
-  requireEnv(
-    'VFW_PASSWORD',
-    PASSWORD
-  );
-
-  console.log(
-    'Opening VFW Indiana members page...'
-  );
-
-  await page.goto(
-    MEMBERS_URL,
-    {
-      waitUntil: 'domcontentloaded',
-      timeout: 45000
-    }
-  );
+  await page.goto(MEMBERS_URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 45000
+  });
 
   await page.waitForTimeout(1000);
 
+  let bodyText = await page.locator('body').innerText();
+
   /*
   |--------------------------------------------------------------------------
-  | CHECK WHETHER ALREADY LOGGED IN
+  | ALREADY AUTHENTICATED?
   |--------------------------------------------------------------------------
   */
 
-  let bodyText =
-    await page
-      .locator('body')
-      .innerText();
-
   if (
-    /members only/i.test(bodyText) &&
-    /log out/i.test(bodyText)
+    /log out/i.test(bodyText) ||
+    /change profile/i.test(bodyText)
   ) {
-    console.log(
-      'Already authenticated with VFW Indiana.'
-    );
-
+    console.log('Already authenticated with VFW Indiana.');
     return;
   }
 
-
   /*
   |--------------------------------------------------------------------------
-  | LOCATE MEMBER ID FIELD
+  | FIND PASSWORD FIELD
   |--------------------------------------------------------------------------
   */
 
-  const textInputs =
-    page.locator(
-      'input[type="text"], input:not([type])'
-    );
-
-  const memberInput =
-    await firstVisible([
-      page.getByLabel(
-        /member.*id/i
-      ),
-
-      page.getByPlaceholder(
-        /member.*id/i
-      ),
-
-      page.locator(
-        'input[name*="member" i]'
-      ),
-
-      page.locator(
-        'input[id*="member" i]'
-      ),
-
-      page.locator(
-        'input[name*="login" i]'
-      ),
-
-      page.locator(
-        'input[id*="login" i]'
-      ),
-
-      textInputs
-    ]);
-
-  if (!memberInput) {
-    throw new Error(
-      'Could not locate VFW Indiana Member ID field.'
-    );
-  }
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | LOCATE PASSWORD FIELD
-  |--------------------------------------------------------------------------
-  */
-
-  const passwordInput =
-    await firstVisible([
-      page.getByLabel(
-        /password/i
-      ),
-
-      page.getByPlaceholder(
-        /password/i
-      ),
-
-      page.locator(
-        'input[type="password"]'
-      ),
-
-      page.locator(
-        'input[name*="password" i]'
-      ),
-
-      page.locator(
-        'input[id*="password" i]'
-      ),
-
-      page.locator(
-        'input[name*="pass" i]'
-      )
-    ]);
+  const passwordInput = await firstVisible([
+    page.locator('input[type="password"]'),
+    page.getByLabel(/password/i),
+    page.getByPlaceholder(/password/i),
+    page.locator('input[name*="pass" i]'),
+    page.locator('input[id*="pass" i]')
+  ]);
 
   if (!passwordInput) {
     throw new Error(
@@ -257,6 +141,39 @@ async function login(page) {
     );
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | FIND LOGIN FORM CONTAINING PASSWORD FIELD
+  |--------------------------------------------------------------------------
+  */
+
+  const loginForm =
+    passwordInput.locator('xpath=ancestor::form[1]');
+
+  if ((await loginForm.count()) === 0) {
+    throw new Error(
+      'Could not locate the VFW Indiana login form.'
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | FIND MEMBER ID INSIDE SAME FORM
+  |--------------------------------------------------------------------------
+  */
+
+  const memberInput = await firstVisible([
+    loginForm.locator('input[name*="member" i]'),
+    loginForm.locator('input[id*="member" i]'),
+    loginForm.locator('input[type="text"]'),
+    loginForm.locator('input:not([type])')
+  ]);
+
+  if (!memberInput) {
+    throw new Error(
+      'Could not locate Member ID field inside the VFW login form.'
+    );
+  }
 
   /*
   |--------------------------------------------------------------------------
@@ -264,72 +181,27 @@ async function login(page) {
   |--------------------------------------------------------------------------
   */
 
-  await memberInput.fill(
-    MEMBER_ID
-  );
+  await memberInput.fill(MEMBER_ID);
+  await passwordInput.fill(PASSWORD);
 
-  await passwordInput.fill(
-    PASSWORD
-  );
-
-  console.log(
-    'VFW credentials entered.'
-  );
-
+  console.log('VFW credentials entered.');
 
   /*
   |--------------------------------------------------------------------------
-  | LOCATE LOGIN CONTROL
-  |--------------------------------------------------------------------------
-  |
-  | The VFW Indiana website is an older ASP site.
-  | It may use a normal button, input button, image button, or link.
+  | FIND SUBMIT CONTROL INSIDE LOGIN FORM ONLY
   |--------------------------------------------------------------------------
   */
 
-  const loginControl =
-    await firstVisible([
-      page.getByRole(
-        'button',
-        {
-          name:
-            /login|log in|sign in|submit/i
-        }
-      ),
-
-      page.getByRole(
-        'link',
-        {
-          name:
-            /login|log in|sign in/i
-        }
-      ),
-
-      page.locator(
-        'input[type="submit"]'
-      ),
-
-      page.locator(
-        'input[value*="login" i]'
-      ),
-
-      page.locator(
-        'input[value*="log in" i]'
-      ),
-
-      page.locator(
-        'input[value*="sign in" i]'
-      ),
-
-      page.locator(
-        'input[type="image"]'
-      ),
-
-      page.locator(
-        'a[href*="login" i]'
-      )
-    ]);
-
+  const submitControl = await firstVisible([
+    loginForm.locator('input[type="submit"]'),
+    loginForm.locator('button[type="submit"]'),
+    loginForm.locator('input[type="image"]'),
+    loginForm.locator('input[value*="login" i]'),
+    loginForm.locator('input[value*="log in" i]'),
+    loginForm.locator('button').filter({
+      hasText: /login|log in|sign in|submit/i
+    })
+  ]);
 
   /*
   |--------------------------------------------------------------------------
@@ -337,136 +209,72 @@ async function login(page) {
   |--------------------------------------------------------------------------
   */
 
-  if (loginControl) {
-    console.log(
-      'VFW login control located.'
-    );
+  if (submitControl) {
+    console.log('Submitting VFW login form...');
 
-    await loginControl.click();
+    await Promise.all([
+      page
+        .waitForLoadState('domcontentloaded')
+        .catch(() => {}),
 
-    await page
-      .waitForLoadState(
-        'domcontentloaded'
-      )
-      .catch(() => {});
-
-    await page.waitForTimeout(
-      1500
-    );
+      submitControl.click()
+    ]);
   } else {
-    /*
-    |--------------------------------------------------------------------------
-    | FALLBACK: PRESS ENTER
-    |--------------------------------------------------------------------------
-    |
-    | Many older HTML/ASP forms submit when Enter is pressed from the
-    | password field even if their login button is implemented unusually.
-    |--------------------------------------------------------------------------
-    */
-
     console.log(
-      'No conventional login control found. Trying Enter-key submission.'
+      'No submit control found inside login form. Pressing Enter in password field.'
     );
 
-    await passwordInput.press(
-      'Enter'
-    );
+    await passwordInput.press('Enter');
 
     await page
-      .waitForLoadState(
-        'domcontentloaded'
-      )
+      .waitForLoadState('domcontentloaded')
       .catch(() => {});
-
-    await page.waitForTimeout(
-      1500
-    );
   }
 
+  await page.waitForTimeout(1800);
 
   /*
   |--------------------------------------------------------------------------
-  | CHECK LOGIN RESULT
+  | VERIFY LOGIN RESULT
   |--------------------------------------------------------------------------
   */
 
-  bodyText =
-    await page
-      .locator('body')
-      .innerText();
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | DETECT LOGIN FAILURE
-  |--------------------------------------------------------------------------
-  */
+  bodyText = await page.locator('body').innerText();
 
   if (
     /invalid.*password/i.test(bodyText) ||
     /incorrect.*password/i.test(bodyText) ||
-    /invalid.*login/i.test(bodyText) ||
-    /login failed/i.test(bodyText)
+    /login failed/i.test(bodyText) ||
+    /invalid.*member/i.test(bodyText)
   ) {
     throw new Error(
       'VFW Indiana rejected the login credentials.'
     );
   }
 
-
   /*
   |--------------------------------------------------------------------------
-  | PRIMARY AUTHENTICATION CHECK
-  |--------------------------------------------------------------------------
-  */
-
-  const authenticated =
-    /members only/i.test(bodyText) &&
-    /log out/i.test(bodyText);
-
-  if (authenticated) {
-    console.log(
-      'VFW Indiana authentication successful.'
-    );
-
-    return;
-  }
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | SECONDARY AUTHENTICATION CHECK
+  | STRONG AUTHENTICATION CHECK
   |--------------------------------------------------------------------------
   */
 
   if (
-    /program reporting/i.test(bodyText) ||
+    /log out/i.test(bodyText) ||
     /change profile/i.test(bodyText)
   ) {
-    console.log(
-      'VFW Indiana authenticated member session detected.'
-    );
-
+    console.log('VFW Indiana authentication successful.');
     return;
   }
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | LOGIN COULD NOT BE CONFIRMED
-  |--------------------------------------------------------------------------
-  */
-
   console.log(
-    'Current VFW URL after login attempt:',
+    'URL after login attempt:',
     page.url()
   );
 
   throw new Error(
-    'VFW Indiana login was attempted, but an authenticated member session could not be confirmed.'
+    'VFW Indiana login form was submitted, but an authenticated session could not be confirmed.'
   );
 }
-
 
 /*
 |--------------------------------------------------------------------------
@@ -484,32 +292,25 @@ async function openProgramReporting(page) {
     'Opening VFW Indiana Program Reporting page...'
   );
 
-  await page.goto(
-    PROGRAM_REPORTING_URL,
-    {
-      waitUntil: 'domcontentloaded',
-      timeout: 45000
-    }
-  );
+  await page.goto(PROGRAM_REPORTING_URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 45000
+  });
 
-  await page.waitForTimeout(
-    1000
-  );
+  await page.waitForTimeout(1000);
 
   const text =
-    await page
-      .locator('body')
-      .innerText();
+    await page.locator('body').innerText();
 
   /*
   |--------------------------------------------------------------------------
-  | CHECK FOR LOGIN REDIRECT
+  | DETECT LOGIN REDIRECT
   |--------------------------------------------------------------------------
   */
 
   if (
-    /member.*id/i.test(text) &&
     /password/i.test(text) &&
+    /member.*id/i.test(text) &&
     !/program reporting/i.test(text)
   ) {
     throw new Error(
@@ -517,9 +318,7 @@ async function openProgramReporting(page) {
     );
   }
 
-  if (
-    !/program reporting/i.test(text)
-  ) {
+  if (!/program reporting/i.test(text)) {
     throw new Error(
       'Indiana Program Reporting page did not load as expected.'
     );
@@ -530,7 +329,6 @@ async function openProgramReporting(page) {
   );
 }
 
-
 /*
 |--------------------------------------------------------------------------
 | VERIFY POST AND DISTRICT
@@ -538,11 +336,8 @@ async function openProgramReporting(page) {
 */
 
 async function verifyPostAndDistrict(page) {
-  const selects =
-    page.locator('select');
-
-  const count =
-    await selects.count();
+  const selects = page.locator('select');
+  const count = await selects.count();
 
   console.log(
     `Found ${count} select controls on Indiana reporting form.`
@@ -551,75 +346,41 @@ async function verifyPostAndDistrict(page) {
   let postVerified = false;
   let districtVerified = false;
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | CHECK EXISTING SELECTED VALUES
-  |--------------------------------------------------------------------------
-  */
-
-  for (
-    let i = 0;
-    i < count;
-    i++
-  ) {
-    const select =
-      selects.nth(i);
+  for (let i = 0; i < count; i++) {
+    const select = selects.nth(i);
 
     try {
       const value =
-        await select.inputValue();
+        String(await select.inputValue()).trim();
 
       const selectedText =
-        await select
-          .locator('option:checked')
-          .textContent();
-
-      const cleanValue =
-        String(value || '')
-          .trim();
-
-      const cleanText =
-        String(selectedText || '')
-          .trim();
+        String(
+          (await select
+            .locator('option:checked')
+            .textContent()) || ''
+        ).trim();
 
       if (
-        cleanValue ===
-          String(POST) ||
-        cleanText ===
-          String(POST)
+        value === String(POST) ||
+        selectedText === String(POST)
       ) {
         postVerified = true;
       }
 
       if (
-        cleanValue ===
-          String(DISTRICT) ||
-        cleanText ===
-          String(DISTRICT)
+        value === String(DISTRICT) ||
+        selectedText === String(DISTRICT)
       ) {
         districtVerified = true;
       }
     } catch (_) {}
   }
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | FALLBACK — SELECT POST
-  |--------------------------------------------------------------------------
-  */
-
-  if (
-    !postVerified &&
-    count >= 1
-  ) {
+  if (!postVerified && count >= 1) {
     try {
       await selects
         .nth(0)
-        .selectOption(
-          String(POST)
-        );
+        .selectOption(String(POST));
 
       postVerified = true;
     } catch (_) {
@@ -629,23 +390,11 @@ async function verifyPostAndDistrict(page) {
     }
   }
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | FALLBACK — SELECT DISTRICT
-  |--------------------------------------------------------------------------
-  */
-
-  if (
-    !districtVerified &&
-    count >= 2
-  ) {
+  if (!districtVerified && count >= 2) {
     try {
       await selects
         .nth(1)
-        .selectOption(
-          String(DISTRICT)
-        );
+        .selectOption(String(DISTRICT));
 
       districtVerified = true;
     } catch (_) {
@@ -655,102 +404,22 @@ async function verifyPostAndDistrict(page) {
     }
   }
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | WARNINGS
-  |--------------------------------------------------------------------------
-  */
-
-  if (!postVerified) {
+  if (postVerified) {
+    console.log(`Post ${POST} verified.`);
+  } else {
     console.warn(
       `Unable to positively verify Post ${POST}.`
     );
-  } else {
-    console.log(
-      `Post ${POST} verified.`
-    );
   }
 
-  if (!districtVerified) {
+  if (districtVerified) {
+    console.log(`District ${DISTRICT} verified.`);
+  } else {
     console.warn(
       `Unable to positively verify District ${DISTRICT}.`
     );
-  } else {
-    console.log(
-      `District ${DISTRICT} verified.`
-    );
   }
 }
-
-
-/*
-|--------------------------------------------------------------------------
-| SELECT COMMUNITY SERVICE
-|--------------------------------------------------------------------------
-*/
-
-async function selectCommunityService(page) {
-  let radio =
-    await firstVisible([
-      page.getByRole(
-        'radio',
-        {
-          name:
-            /community service/i
-        }
-      ),
-
-      page.locator(
-        'input[type="radio"]'
-      )
-    ]);
-
-  if (!radio) {
-    /*
-    |--------------------------------------------------------------------------
-    | FALLBACK USING TEXT
-    |--------------------------------------------------------------------------
-    */
-
-    const text =
-      page.getByText(
-        'Community Service',
-        {
-          exact: true
-        }
-      );
-
-    if (
-      (await text.count()) > 0
-    ) {
-      try {
-        await text.first().click();
-
-        console.log(
-          'Community Service selected using text fallback.'
-        );
-
-        return;
-      } catch (_) {}
-    }
-
-    throw new Error(
-      'Could not locate Community Service program option.'
-    );
-  }
-
-  try {
-    await radio.check();
-  } catch (_) {
-    await radio.click();
-  }
-
-  console.log(
-    'Community Service selected.'
-  );
-}
-
 
 /*
 |--------------------------------------------------------------------------
@@ -759,68 +428,27 @@ async function selectCommunityService(page) {
 */
 
 async function fillSubmitterEmail(page) {
-  const emailInput =
-    await firstVisible([
-      page.getByLabel(
-        /submitter email/i
-      ),
-
-      page.getByPlaceholder(
-        /email/i
-      ),
-
-      page.locator(
-        'input[type="email"]'
-      ),
-
-      page.locator(
-        'input[name*="email" i]'
-      ),
-
-      page.locator(
-        'input[id*="email" i]'
-      )
-    ]);
+  let emailInput = await firstVisible([
+    page.getByLabel(/submitter email/i),
+    page.getByPlaceholder(/email/i),
+    page.locator('input[type="email"]'),
+    page.locator('input[name*="email" i]'),
+    page.locator('input[id*="email" i]')
+  ]);
 
   if (!emailInput) {
-    /*
-    |--------------------------------------------------------------------------
-    | FALLBACK
-    |--------------------------------------------------------------------------
-    |
-    | The Indiana page visually labels the field "Submitter Email", but
-    | the HTML label may not actually be connected to the input.
-    |--------------------------------------------------------------------------
-    */
-
-    const inputs =
-      page.locator(
-        'input[type="text"]'
-      );
+    const textInputs =
+      page.locator('input[type="text"]');
 
     const count =
-      await inputs.count();
-
-    /*
-    | Based on the Indiana form shown during development, Post and District
-    | are select controls. Submitter Email is the first ordinary text field
-    | in the top portion of the form.
-    */
+      await textInputs.count();
 
     if (count > 0) {
-      await inputs
-        .first()
-        .fill(
-          SUBMITTER_EMAIL
-        );
-
-      console.log(
-        'Submitter Email filled using text-input fallback.'
-      );
-
-      return;
+      emailInput = textInputs.first();
     }
+  }
 
+  if (!emailInput) {
     throw new Error(
       'Could not locate Submitter Email input on Indiana reporting page.'
     );
@@ -830,11 +458,8 @@ async function fillSubmitterEmail(page) {
     SUBMITTER_EMAIL
   );
 
-  console.log(
-    'Submitter Email filled.'
-  );
+  console.log('Submitter Email filled.');
 }
-
 
 /*
 |--------------------------------------------------------------------------
@@ -843,24 +468,12 @@ async function fillSubmitterEmail(page) {
 */
 
 async function fillDate(page, report) {
-  const dateInput =
-    await firstVisible([
-      page.getByLabel(
-        /date of activity/i
-      ),
-
-      page.locator(
-        'input[type="date"]'
-      ),
-
-      page.locator(
-        'input[name*="date" i]'
-      ),
-
-      page.locator(
-        'input[id*="date" i]'
-      )
-    ]);
+  const dateInput = await firstVisible([
+    page.getByLabel(/date of activity/i),
+    page.locator('input[type="date"]'),
+    page.locator('input[name*="date" i]'),
+    page.locator('input[id*="date" i]')
+  ]);
 
   if (!dateInput) {
     throw new Error(
@@ -869,16 +482,60 @@ async function fillDate(page, report) {
   }
 
   await dateInput.fill(
-    String(
-      report.date_of_service || ''
-    )
+    String(report.date_of_service || '')
   );
 
-  console.log(
-    'Date of Activity filled.'
-  );
+  console.log('Date of Activity filled.');
 }
 
+/*
+|--------------------------------------------------------------------------
+| SELECT COMMUNITY SERVICE
+|--------------------------------------------------------------------------
+*/
+
+async function selectCommunityService(page) {
+  let radio = await firstVisible([
+    page.getByRole('radio', {
+      name: /community service/i
+    }),
+
+    page.locator('input[type="radio"]')
+  ]);
+
+  if (radio) {
+    try {
+      await radio.check();
+    } catch (_) {
+      await radio.click();
+    }
+
+    console.log('Community Service selected.');
+    return;
+  }
+
+  const text =
+    page.getByText(
+      'Community Service',
+      {
+        exact: true
+      }
+    );
+
+  if ((await text.count()) > 0) {
+    await text.first().click();
+
+    console.log(
+      'Community Service selected using text fallback.'
+    );
+
+    return;
+  }
+
+  throw new Error(
+    'Could not locate Community Service program option.'
+  );
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -890,140 +547,59 @@ async function fillNumericFields(
   page,
   report
 ) {
-  /*
-  |--------------------------------------------------------------------------
-  | TRY SEMANTIC SELECTORS FIRST
-  |--------------------------------------------------------------------------
-  */
+  let hours = await firstVisible([
+    page.getByLabel(/cumulative hours|hours/i),
+    page.locator('input[name*="hour" i]'),
+    page.locator('input[id*="hour" i]')
+  ]);
 
-  let hours =
-    await firstVisible([
-      page.getByLabel(
-        /cumulative hours|hours/i
-      ),
+  let miles = await firstVisible([
+    page.getByLabel(/miles/i),
+    page.locator('input[name*="mile" i]'),
+    page.locator('input[id*="mile" i]')
+  ]);
 
-      page.locator(
-        'input[name*="hour" i]'
-      ),
+  let members = await firstVisible([
+    page.getByLabel(/^members$/i),
+    page.locator('input[name*="member" i]'),
+    page.locator('input[id*="member" i]')
+  ]);
 
-      page.locator(
-        'input[id*="hour" i]'
-      )
-    ]);
-
-
-  let miles =
-    await firstVisible([
-      page.getByLabel(
-        /miles/i
-      ),
-
-      page.locator(
-        'input[name*="mile" i]'
-      ),
-
-      page.locator(
-        'input[id*="mile" i]'
-      )
-    ]);
-
-
-  let members =
-    await firstVisible([
-      page.getByLabel(
-        /^members$/i
-      ),
-
-      page.locator(
-        'input[name*="member" i]'
-      ),
-
-      page.locator(
-        'input[id*="member" i]'
-      )
-    ]);
-
-
-  let dollars =
-    await firstVisible([
-      page.getByLabel(
-        /dollars.*spent|dollars.*donated|spent.*donated/i
-      ),
-
-      page.locator(
-        'input[name*="dollar" i]'
-      ),
-
-      page.locator(
-        'input[id*="dollar" i]'
-      )
-    ]);
-
+  let dollars = await firstVisible([
+    page.getByLabel(
+      /dollars.*spent|dollars.*donated|spent.*donated/i
+    ),
+    page.locator('input[name*="dollar" i]'),
+    page.locator('input[id*="dollar" i]')
+  ]);
 
   /*
   |--------------------------------------------------------------------------
-  | FALLBACK TO NUMBER INPUT ORDER
-  |--------------------------------------------------------------------------
-  |
-  | Indiana form order:
-  |
-  | 0 = Cumulative Hours
-  | 1 = Miles
-  | 2 = Members
-  | 3 = Dollars Spent / Donated
+  | FALLBACK TO INPUT ORDER
   |--------------------------------------------------------------------------
   */
 
   const numericInputs =
-    page.locator(
-      'input[type="number"]'
-    );
+    page.locator('input[type="number"]');
 
   const numericCount =
     await numericInputs.count();
 
-
-  if (
-    !hours &&
-    numericCount >= 1
-  ) {
-    hours =
-      numericInputs.nth(0);
+  if (!hours && numericCount >= 1) {
+    hours = numericInputs.nth(0);
   }
 
-
-  if (
-    !miles &&
-    numericCount >= 2
-  ) {
-    miles =
-      numericInputs.nth(1);
+  if (!miles && numericCount >= 2) {
+    miles = numericInputs.nth(1);
   }
 
-
-  if (
-    !members &&
-    numericCount >= 3
-  ) {
-    members =
-      numericInputs.nth(2);
+  if (!members && numericCount >= 3) {
+    members = numericInputs.nth(2);
   }
 
-
-  if (
-    !dollars &&
-    numericCount >= 4
-  ) {
-    dollars =
-      numericInputs.nth(3);
+  if (!dollars && numericCount >= 4) {
+    dollars = numericInputs.nth(3);
   }
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | VERIFY ALL FOUR FIELDS EXIST
-  |--------------------------------------------------------------------------
-  */
 
   if (!hours) {
     throw new Error(
@@ -1049,43 +625,28 @@ async function fillNumericFields(
     );
   }
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | FILL VALUES
-  |--------------------------------------------------------------------------
-  */
-
   await hours.fill(
-    String(
-      report.volunteer_hours ?? 0
-    )
+    String(report.volunteer_hours ?? 0)
   );
 
   await miles.fill(
-    String(
-      report.miles_traveled ?? 0
-    )
+    String(report.miles_traveled ?? 0)
   );
 
   await members.fill(
     String(
-      report.vfw_members_participating ??
-        1
+      report.vfw_members_participating ?? 1
     )
   );
 
   await dollars.fill(
-    String(
-      report.money_or_donations ?? 0
-    )
+    String(report.money_or_donations ?? 0)
   );
 
   console.log(
     'Hours, Miles, Members, and Dollars filled.'
   );
 }
-
 
 /*
 |--------------------------------------------------------------------------
@@ -1102,16 +663,10 @@ async function fillDescription(
     report.activity_description ||
     '';
 
-  const textarea =
-    await firstVisible([
-      page.getByLabel(
-        /description/i
-      ),
-
-      page.locator(
-        'textarea'
-      )
-    ]);
+  const textarea = await firstVisible([
+    page.getByLabel(/description/i),
+    page.locator('textarea')
+  ]);
 
   if (!textarea) {
     throw new Error(
@@ -1119,15 +674,10 @@ async function fillDescription(
     );
   }
 
-  await textarea.fill(
-    description
-  );
+  await textarea.fill(description);
 
-  console.log(
-    'Description filled.'
-  );
+  console.log('Description filled.');
 }
-
 
 /*
 |--------------------------------------------------------------------------
@@ -1139,18 +689,9 @@ async function fillProgramReport(
   page,
   report
 ) {
-  await fillSubmitterEmail(
-    page
-  );
-
-  await fillDate(
-    page,
-    report
-  );
-
-  await selectCommunityService(
-    page
-  );
+  await fillSubmitterEmail(page);
+  await fillDate(page, report);
+  await selectCommunityService(page);
 
   await fillNumericFields(
     page,
@@ -1163,7 +704,6 @@ async function fillProgramReport(
   );
 }
 
-
 /*
 |--------------------------------------------------------------------------
 | VERIFY PREPARED FORM
@@ -1174,12 +714,6 @@ async function verifyFilledValues(
   page,
   report
 ) {
-  /*
-  |--------------------------------------------------------------------------
-  | VERIFY DESCRIPTION
-  |--------------------------------------------------------------------------
-  */
-
   const expectedDescription =
     String(
       report.proposed_description ||
@@ -1187,10 +721,9 @@ async function verifyFilledValues(
       ''
     ).trim();
 
-  const textarea =
-    await firstVisible([
-      page.locator('textarea')
-    ]);
+  const textarea = await firstVisible([
+    page.locator('textarea')
+  ]);
 
   if (!textarea) {
     throw new Error(
@@ -1213,13 +746,6 @@ async function verifyFilledValues(
     );
   }
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | VERIFY COMMUNITY SERVICE RADIO
-  |--------------------------------------------------------------------------
-  */
-
   const radios =
     page.locator(
       'input[type="radio"]'
@@ -1238,9 +764,7 @@ async function verifyFilledValues(
     ) {
       try {
         if (
-          await radios
-            .nth(i)
-            .isChecked()
+          await radios.nth(i).isChecked()
         ) {
           checked = true;
           break;
@@ -1260,21 +784,17 @@ async function verifyFilledValues(
   );
 }
 
-
 /*
 |--------------------------------------------------------------------------
-| FIND FINAL INDIANA SUBMIT BUTTON
+| FIND FINAL SUBMIT BUTTON
 |--------------------------------------------------------------------------
 */
 
 async function findSubmitButton(page) {
   return firstVisible([
-    page.getByRole(
-      'button',
-      {
-        name: /^submit$/i
-      }
-    ),
+    page.getByRole('button', {
+      name: /^submit$/i
+    }),
 
     page.locator(
       'input[type="submit"]'
@@ -1289,7 +809,6 @@ async function findSubmitButton(page) {
     )
   ]);
 }
-
 
 /*
 |--------------------------------------------------------------------------
@@ -1318,13 +837,6 @@ async function prepareOrSubmit(report) {
     PASSWORD
   );
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | START CHROMIUM
-  |--------------------------------------------------------------------------
-  */
-
   const browser =
     await chromium.launch({
       headless: true,
@@ -1336,17 +848,9 @@ async function prepareOrSubmit(report) {
       ]
     });
 
-
   let page;
 
-
   try {
-    /*
-    |--------------------------------------------------------------------------
-    | CREATE BROWSER CONTEXT
-    |--------------------------------------------------------------------------
-    */
-
     const context =
       await browser.newContext({
         viewport: {
@@ -1355,15 +859,12 @@ async function prepareOrSubmit(report) {
         }
       });
 
-
     page =
       await context.newPage();
-
 
     page.setDefaultTimeout(
       15000
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -1376,7 +877,6 @@ async function prepareOrSubmit(report) {
     );
 
     await login(page);
-
 
     /*
     |--------------------------------------------------------------------------
@@ -1392,10 +892,9 @@ async function prepareOrSubmit(report) {
       page
     );
 
-
     /*
     |--------------------------------------------------------------------------
-    | STEP 3 — VERIFY POST AND DISTRICT
+    | STEP 3 — VERIFY POST / DISTRICT
     |--------------------------------------------------------------------------
     */
 
@@ -1407,10 +906,9 @@ async function prepareOrSubmit(report) {
       page
     );
 
-
     /*
     |--------------------------------------------------------------------------
-    | STEP 4 — POPULATE FORM
+    | STEP 4 — FILL FORM
     |--------------------------------------------------------------------------
     */
 
@@ -1422,7 +920,6 @@ async function prepareOrSubmit(report) {
       page,
       report
     );
-
 
     /*
     |--------------------------------------------------------------------------
@@ -1439,10 +936,9 @@ async function prepareOrSubmit(report) {
       report
     );
 
-
     /*
     |--------------------------------------------------------------------------
-    | STEP 6 — SCREENSHOT BEFORE SUBMISSION
+    | STEP 6 — CAPTURE SCREENSHOT
     |--------------------------------------------------------------------------
     */
 
@@ -1457,19 +953,9 @@ async function prepareOrSubmit(report) {
         'prepared'
       );
 
-
     /*
     |--------------------------------------------------------------------------
     | SAFETY GATE
-    |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    |
-    | Unless the Render environment variable is literally:
-    |
-    | VFW_ALLOW_FINAL_SUBMIT=true
-    |
-    | the Indiana Submit button WILL NOT be clicked.
     |--------------------------------------------------------------------------
     */
 
@@ -1489,10 +975,9 @@ async function prepareOrSubmit(report) {
       };
     }
 
-
     /*
     |--------------------------------------------------------------------------
-    | STEP 7 — FIND FINAL SUBMIT BUTTON
+    | FINAL SUBMISSION ENABLED
     |--------------------------------------------------------------------------
     */
 
@@ -1511,19 +996,11 @@ async function prepareOrSubmit(report) {
       );
     }
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | STEP 8 — SUBMIT
-    |--------------------------------------------------------------------------
-    */
-
     console.log(
       'STEP 8: Submitting report to VFW Indiana...'
     );
 
     await submitButton.click();
-
 
     await page
       .waitForLoadState(
@@ -1531,17 +1008,9 @@ async function prepareOrSubmit(report) {
       )
       .catch(() => {});
 
-
     await page.waitForTimeout(
       1500
     );
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | CAPTURE RESPONSE
-    |--------------------------------------------------------------------------
-    */
 
     const resultText =
       (
@@ -1553,7 +1022,6 @@ async function prepareOrSubmit(report) {
         4000
       );
 
-
     const submittedScreenshot =
       await screenshot(
         page,
@@ -1561,18 +1029,10 @@ async function prepareOrSubmit(report) {
         'submitted'
       );
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | DETECT SUCCESS
-    |--------------------------------------------------------------------------
-    */
-
     const success =
       /thank|success|submitted|report.*received|activity.*entered/i.test(
         resultText
       );
-
 
     if (!success) {
       throw new Error(
@@ -1580,11 +1040,9 @@ async function prepareOrSubmit(report) {
       );
     }
 
-
     console.log(
       'VFW Indiana report submission successful.'
     );
-
 
     return {
       mode: 'submitted',
@@ -1600,20 +1058,12 @@ async function prepareOrSubmit(report) {
     };
 
   } catch (err) {
-    /*
-    |--------------------------------------------------------------------------
-    | CAPTURE ERROR SCREENSHOT
-    |--------------------------------------------------------------------------
-    */
-
     console.error(
       'VFW AUTOMATION ERROR:',
       err.message
     );
 
-
     let errorScreenshot = '';
-
 
     try {
       if (page) {
@@ -1638,26 +1088,15 @@ async function prepareOrSubmit(report) {
       );
     }
 
-
     const wrapped =
-      new Error(
-        err.message
-      );
-
+      new Error(err.message);
 
     wrapped.screenshot =
       errorScreenshot;
 
-
     throw wrapped;
 
   } finally {
-    /*
-    |--------------------------------------------------------------------------
-    | ALWAYS CLOSE BROWSER
-    |--------------------------------------------------------------------------
-    */
-
     await browser.close();
 
     console.log(
@@ -1665,7 +1104,6 @@ async function prepareOrSubmit(report) {
     );
   }
 }
-
 
 /*
 |--------------------------------------------------------------------------
