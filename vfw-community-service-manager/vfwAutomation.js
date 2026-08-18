@@ -4,41 +4,30 @@ const path = require('path');
 
 /*
 |--------------------------------------------------------------------------
-| CONFIG
+| CONFIGURATION
 |--------------------------------------------------------------------------
 */
 
-const MEMBERS_URL =
-  process.env.VFW_MEMBERS_URL;
+const MEMBERS_URL = process.env.VFW_MEMBERS_URL;
+const PROGRAM_REPORTING_URL = process.env.VFW_PROGRAM_REPORTING_URL;
 
-const PROGRAM_REPORTING_URL =
-  process.env.VFW_PROGRAM_REPORTING_URL;
+const MEMBER_ID = process.env.VFW_MEMBER_ID;
+const PASSWORD = process.env.VFW_PASSWORD;
 
-const MEMBER_ID =
-  process.env.VFW_MEMBER_ID;
-
-const PASSWORD =
-  process.env.VFW_PASSWORD;
-
-const POST =
-  process.env.VFW_POST || '10003';
-
-const DISTRICT =
-  process.env.VFW_DISTRICT || '6';
+const POST = process.env.VFW_POST || '10003';
+const DISTRICT = process.env.VFW_DISTRICT || '6';
 
 const SUBMITTER_EMAIL =
-  process.env.VFW_SUBMITTER_EMAIL ||
-  'vfwcarmel@yahoo.com';
+  process.env.VFW_SUBMITTER_EMAIL || 'vfwcarmel@yahoo.com';
 
 const ALLOW_FINAL_SUBMIT =
-  String(
-    process.env.VFW_ALLOW_FINAL_SUBMIT || 'false'
-  ).toLowerCase() === 'true';
+  String(process.env.VFW_ALLOW_FINAL_SUBMIT || 'false').toLowerCase() ===
+  'true';
 
 
 /*
 |--------------------------------------------------------------------------
-| HELPERS
+| ENVIRONMENT VALIDATION
 |--------------------------------------------------------------------------
 */
 
@@ -51,17 +40,23 @@ function requireEnv(name, value) {
 }
 
 
+/*
+|--------------------------------------------------------------------------
+| LOCATOR HELPERS
+|--------------------------------------------------------------------------
+*/
+
 async function firstVisible(locators) {
   for (const locator of locators) {
     try {
       if (
-        await locator.count() > 0 &&
-        await locator.first().isVisible()
+        (await locator.count()) > 0 &&
+        (await locator.first().isVisible())
       ) {
         return locator.first();
       }
     } catch (_) {
-      // Try next locator.
+      // Try the next locator.
     }
   }
 
@@ -69,14 +64,8 @@ async function firstVisible(locators) {
 }
 
 
-async function fillFirst(
-  page,
-  description,
-  locators,
-  value
-) {
-  const locator =
-    await firstVisible(locators);
+async function fillFirst(page, description, locators, value) {
+  const locator = await firstVisible(locators);
 
   if (!locator) {
     throw new Error(
@@ -84,95 +73,35 @@ async function fillFirst(
     );
   }
 
-  await locator.fill(
-    String(value ?? '')
-  );
+  await locator.fill(String(value ?? ''));
 
   return locator;
 }
 
 
-async function clickFirst(
-  page,
-  description,
-  locators
-) {
-  const locator =
-    await firstVisible(locators);
+/*
+|--------------------------------------------------------------------------
+| SCREENSHOT HELPER
+|--------------------------------------------------------------------------
+*/
 
-  if (!locator) {
-    throw new Error(
-      `Could not find control: ${description}`
-    );
-  }
-
-  await locator.click();
-
-  return locator;
-}
-
-
-async function selectFirst(
-  page,
-  description,
-  locators,
-  value
-) {
-  const locator =
-    await firstVisible(locators);
-
-  if (!locator) {
-    throw new Error(
-      `Could not find select: ${description}`
-    );
-  }
-
-  try {
-    await locator.selectOption({
-      value: String(value)
-    });
-
-    return locator;
-  } catch (_) {
-    try {
-      await locator.selectOption({
-        label: String(value)
-      });
-
-      return locator;
-    } catch (err) {
-      throw new Error(
-        `Could not select ${description} value "${value}": ${err.message}`
-      );
-    }
-  }
-}
-
-
-async function screenshot(
-  page,
-  reportId,
-  suffix
-) {
-  const dir =
-    path.join(
-      __dirname,
-      'screenshots'
-    );
-
-  fs.mkdirSync(
-    dir,
-    { recursive: true }
+async function screenshot(page, reportId, suffix) {
+  const dir = path.join(
+    __dirname,
+    'screenshots'
   );
+
+  fs.mkdirSync(dir, {
+    recursive: true
+  });
 
   const filename =
     `report-${reportId}-${suffix}-${Date.now()}.png`;
 
-  const fullPath =
-    path.join(
-      dir,
-      filename
-    );
+  const fullPath = path.join(
+    dir,
+    filename
+  );
 
   await page.screenshot({
     path: fullPath,
@@ -185,7 +114,7 @@ async function screenshot(
 
 /*
 |--------------------------------------------------------------------------
-| LOGIN
+| VFW INDIANA LOGIN
 |--------------------------------------------------------------------------
 */
 
@@ -205,6 +134,10 @@ async function login(page) {
     PASSWORD
   );
 
+  console.log(
+    'Opening VFW Indiana members page...'
+  );
+
   await page.goto(
     MEMBERS_URL,
     {
@@ -213,11 +146,41 @@ async function login(page) {
     }
   );
 
+  await page.waitForTimeout(1000);
+
   /*
   |--------------------------------------------------------------------------
-  | MEMBER ID
+  | CHECK WHETHER ALREADY LOGGED IN
   |--------------------------------------------------------------------------
   */
+
+  let bodyText =
+    await page
+      .locator('body')
+      .innerText();
+
+  if (
+    /members only/i.test(bodyText) &&
+    /log out/i.test(bodyText)
+  ) {
+    console.log(
+      'Already authenticated with VFW Indiana.'
+    );
+
+    return;
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | LOCATE MEMBER ID FIELD
+  |--------------------------------------------------------------------------
+  */
+
+  const textInputs =
+    page.locator(
+      'input[type="text"], input:not([type])'
+    );
 
   const memberInput =
     await firstVisible([
@@ -238,13 +201,26 @@ async function login(page) {
       ),
 
       page.locator(
-        'input[type="text"]'
-      )
+        'input[name*="login" i]'
+      ),
+
+      page.locator(
+        'input[id*="login" i]'
+      ),
+
+      textInputs
     ]);
+
+  if (!memberInput) {
+    throw new Error(
+      'Could not locate VFW Indiana Member ID field.'
+    );
+  }
+
 
   /*
   |--------------------------------------------------------------------------
-  | PASSWORD
+  | LOCATE PASSWORD FIELD
   |--------------------------------------------------------------------------
   */
 
@@ -260,94 +236,252 @@ async function login(page) {
 
       page.locator(
         'input[type="password"]'
+      ),
+
+      page.locator(
+        'input[name*="password" i]'
+      ),
+
+      page.locator(
+        'input[id*="password" i]'
+      ),
+
+      page.locator(
+        'input[name*="pass" i]'
       )
     ]);
 
-  if (
-    memberInput &&
-    passwordInput
-  ) {
-    await memberInput.fill(
-      MEMBER_ID
+  if (!passwordInput) {
+    throw new Error(
+      'Could not locate VFW Indiana password field.'
     );
-
-    await passwordInput.fill(
-      PASSWORD
-    );
-
-    const loginButton =
-      await firstVisible([
-        page.getByRole(
-          'button',
-          {
-            name:
-              /login|log in|sign in/i
-          }
-        ),
-
-        page.locator(
-          'input[type="submit"]'
-        ),
-
-        page.locator(
-          'button[type="submit"]'
-        )
-      ]);
-
-    if (!loginButton) {
-      throw new Error(
-        'Could not find VFW Indiana login button.'
-      );
-    }
-
-    await Promise.all([
-      page.waitForLoadState(
-        'domcontentloaded'
-      ).catch(() => {}),
-
-      loginButton.click()
-    ]);
   }
+
 
   /*
   |--------------------------------------------------------------------------
-  | VERIFY LOGIN
+  | ENTER CREDENTIALS
   |--------------------------------------------------------------------------
   */
 
-  await page.waitForTimeout(
-    1000
+  await memberInput.fill(
+    MEMBER_ID
   );
 
-  const bodyText =
-    await page.locator(
-      'body'
-    ).innerText();
+  await passwordInput.fill(
+    PASSWORD
+  );
 
-  if (
-    /invalid.*password|login failed|incorrect/i.test(
-      bodyText
-    )
-  ) {
-    throw new Error(
-      'VFW Indiana login failed. Check member ID and password.'
+  console.log(
+    'VFW credentials entered.'
+  );
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | LOCATE LOGIN CONTROL
+  |--------------------------------------------------------------------------
+  |
+  | The VFW Indiana website is an older ASP site.
+  | It may use a normal button, input button, image button, or link.
+  |--------------------------------------------------------------------------
+  */
+
+  const loginControl =
+    await firstVisible([
+      page.getByRole(
+        'button',
+        {
+          name:
+            /login|log in|sign in|submit/i
+        }
+      ),
+
+      page.getByRole(
+        'link',
+        {
+          name:
+            /login|log in|sign in/i
+        }
+      ),
+
+      page.locator(
+        'input[type="submit"]'
+      ),
+
+      page.locator(
+        'input[value*="login" i]'
+      ),
+
+      page.locator(
+        'input[value*="log in" i]'
+      ),
+
+      page.locator(
+        'input[value*="sign in" i]'
+      ),
+
+      page.locator(
+        'input[type="image"]'
+      ),
+
+      page.locator(
+        'a[href*="login" i]'
+      )
+    ]);
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | SUBMIT LOGIN
+  |--------------------------------------------------------------------------
+  */
+
+  if (loginControl) {
+    console.log(
+      'VFW login control located.'
+    );
+
+    await loginControl.click();
+
+    await page
+      .waitForLoadState(
+        'domcontentloaded'
+      )
+      .catch(() => {});
+
+    await page.waitForTimeout(
+      1500
+    );
+  } else {
+    /*
+    |--------------------------------------------------------------------------
+    | FALLBACK: PRESS ENTER
+    |--------------------------------------------------------------------------
+    |
+    | Many older HTML/ASP forms submit when Enter is pressed from the
+    | password field even if their login button is implemented unusually.
+    |--------------------------------------------------------------------------
+    */
+
+    console.log(
+      'No conventional login control found. Trying Enter-key submission.'
+    );
+
+    await passwordInput.press(
+      'Enter'
+    );
+
+    await page
+      .waitForLoadState(
+        'domcontentloaded'
+      )
+      .catch(() => {});
+
+    await page.waitForTimeout(
+      1500
     );
   }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | CHECK LOGIN RESULT
+  |--------------------------------------------------------------------------
+  */
+
+  bodyText =
+    await page
+      .locator('body')
+      .innerText();
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | DETECT LOGIN FAILURE
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    /invalid.*password/i.test(bodyText) ||
+    /incorrect.*password/i.test(bodyText) ||
+    /invalid.*login/i.test(bodyText) ||
+    /login failed/i.test(bodyText)
+  ) {
+    throw new Error(
+      'VFW Indiana rejected the login credentials.'
+    );
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | PRIMARY AUTHENTICATION CHECK
+  |--------------------------------------------------------------------------
+  */
+
+  const authenticated =
+    /members only/i.test(bodyText) &&
+    /log out/i.test(bodyText);
+
+  if (authenticated) {
+    console.log(
+      'VFW Indiana authentication successful.'
+    );
+
+    return;
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | SECONDARY AUTHENTICATION CHECK
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    /program reporting/i.test(bodyText) ||
+    /change profile/i.test(bodyText)
+  ) {
+    console.log(
+      'VFW Indiana authenticated member session detected.'
+    );
+
+    return;
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | LOGIN COULD NOT BE CONFIRMED
+  |--------------------------------------------------------------------------
+  */
+
+  console.log(
+    'Current VFW URL after login attempt:',
+    page.url()
+  );
+
+  throw new Error(
+    'VFW Indiana login was attempted, but an authenticated member session could not be confirmed.'
+  );
 }
 
 
 /*
 |--------------------------------------------------------------------------
-| OPEN PROGRAM REPORTING
+| OPEN PROGRAM REPORTING PAGE
 |--------------------------------------------------------------------------
 */
 
-async function openProgramReporting(
-  page
-) {
+async function openProgramReporting(page) {
   requireEnv(
     'VFW_PROGRAM_REPORTING_URL',
     PROGRAM_REPORTING_URL
+  );
+
+  console.log(
+    'Opening VFW Indiana Program Reporting page...'
   );
 
   await page.goto(
@@ -359,50 +493,70 @@ async function openProgramReporting(
   );
 
   await page.waitForTimeout(
-    750
+    1000
   );
 
   const text =
-    await page.locator(
-      'body'
-    ).innerText();
+    await page
+      .locator('body')
+      .innerText();
+
+  /*
+  |--------------------------------------------------------------------------
+  | CHECK FOR LOGIN REDIRECT
+  |--------------------------------------------------------------------------
+  */
 
   if (
-    !/program reporting/i.test(
-      text
-    )
+    /member.*id/i.test(text) &&
+    /password/i.test(text) &&
+    !/program reporting/i.test(text)
+  ) {
+    throw new Error(
+      'VFW Indiana redirected the automation back to login. The authenticated session was not retained.'
+    );
+  }
+
+  if (
+    !/program reporting/i.test(text)
   ) {
     throw new Error(
       'Indiana Program Reporting page did not load as expected.'
     );
   }
+
+  console.log(
+    'VFW Indiana Program Reporting page loaded.'
+  );
 }
 
 
 /*
 |--------------------------------------------------------------------------
-| POST AND DISTRICT
+| VERIFY POST AND DISTRICT
 |--------------------------------------------------------------------------
 */
 
-async function verifyPostAndDistrict(
-  page
-) {
+async function verifyPostAndDistrict(page) {
   const selects =
-    page.locator(
-      'select'
-    );
+    page.locator('select');
 
   const count =
     await selects.count();
 
-  /*
-  |--------------------------------------------------------------------------
-  | POST
-  |--------------------------------------------------------------------------
-  */
+  console.log(
+    `Found ${count} select controls on Indiana reporting form.`
+  );
 
   let postVerified = false;
+  let districtVerified = false;
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | CHECK EXISTING SELECTED VALUES
+  |--------------------------------------------------------------------------
+  */
 
   for (
     let i = 0;
@@ -418,70 +572,41 @@ async function verifyPostAndDistrict(
 
       const selectedText =
         await select
-          .locator(
-            'option:checked'
-          )
+          .locator('option:checked')
           .textContent();
 
+      const cleanValue =
+        String(value || '')
+          .trim();
+
+      const cleanText =
+        String(selectedText || '')
+          .trim();
+
       if (
-        String(value).trim() ===
+        cleanValue ===
           String(POST) ||
-        String(
-          selectedText || ''
-        ).trim() ===
+        cleanText ===
           String(POST)
       ) {
         postVerified = true;
-        break;
       }
-    } catch (_) {}
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | DISTRICT
-  |--------------------------------------------------------------------------
-  */
-
-  let districtVerified = false;
-
-  for (
-    let i = 0;
-    i < count;
-    i++
-  ) {
-    const select =
-      selects.nth(i);
-
-    try {
-      const value =
-        await select.inputValue();
-
-      const selectedText =
-        await select
-          .locator(
-            'option:checked'
-          )
-          .textContent();
 
       if (
-        String(value).trim() ===
+        cleanValue ===
           String(DISTRICT) ||
-        String(
-          selectedText || ''
-        ).trim() ===
+        cleanText ===
           String(DISTRICT)
       ) {
-        districtVerified =
-          true;
-        break;
+        districtVerified = true;
       }
     } catch (_) {}
   }
 
+
   /*
   |--------------------------------------------------------------------------
-  | FALLBACK: TRY TO SELECT VALUES
+  | FALLBACK — SELECT POST
   |--------------------------------------------------------------------------
   */
 
@@ -497,8 +622,19 @@ async function verifyPostAndDistrict(
         );
 
       postVerified = true;
-    } catch (_) {}
+    } catch (_) {
+      console.warn(
+        `Could not automatically select Post ${POST}.`
+      );
+    }
   }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | FALLBACK — SELECT DISTRICT
+  |--------------------------------------------------------------------------
+  */
 
   if (
     !districtVerified &&
@@ -512,12 +648,27 @@ async function verifyPostAndDistrict(
         );
 
       districtVerified = true;
-    } catch (_) {}
+    } catch (_) {
+      console.warn(
+        `Could not automatically select District ${DISTRICT}.`
+      );
+    }
   }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | WARNINGS
+  |--------------------------------------------------------------------------
+  */
 
   if (!postVerified) {
     console.warn(
       `Unable to positively verify Post ${POST}.`
+    );
+  } else {
+    console.log(
+      `Post ${POST} verified.`
     );
   }
 
@@ -525,20 +676,22 @@ async function verifyPostAndDistrict(
     console.warn(
       `Unable to positively verify District ${DISTRICT}.`
     );
+  } else {
+    console.log(
+      `District ${DISTRICT} verified.`
+    );
   }
 }
 
 
 /*
 |--------------------------------------------------------------------------
-| COMMUNITY SERVICE PROGRAM RADIO
+| SELECT COMMUNITY SERVICE
 |--------------------------------------------------------------------------
 */
 
-async function selectCommunityService(
-  page
-) {
-  const radio =
+async function selectCommunityService(page) {
+  let radio =
     await firstVisible([
       page.getByRole(
         'radio',
@@ -554,6 +707,34 @@ async function selectCommunityService(
     ]);
 
   if (!radio) {
+    /*
+    |--------------------------------------------------------------------------
+    | FALLBACK USING TEXT
+    |--------------------------------------------------------------------------
+    */
+
+    const text =
+      page.getByText(
+        'Community Service',
+        {
+          exact: true
+        }
+      );
+
+    if (
+      (await text.count()) > 0
+    ) {
+      try {
+        await text.first().click();
+
+        console.log(
+          'Community Service selected using text fallback.'
+        );
+
+        return;
+      } catch (_) {}
+    }
+
     throw new Error(
       'Could not locate Community Service program option.'
     );
@@ -564,29 +745,22 @@ async function selectCommunityService(
   } catch (_) {
     await radio.click();
   }
+
+  console.log(
+    'Community Service selected.'
+  );
 }
 
 
 /*
 |--------------------------------------------------------------------------
-| FILL PROGRAM REPORT
+| FILL SUBMITTER EMAIL
 |--------------------------------------------------------------------------
 */
 
-async function fillProgramReport(
-  page,
-  report
-) {
-  /*
-  |--------------------------------------------------------------------------
-  | SUBMITTER EMAIL
-  |--------------------------------------------------------------------------
-  */
-
-  await fillFirst(
-    page,
-    'Submitter Email',
-    [
+async function fillSubmitterEmail(page) {
+  const emailInput =
+    await firstVisible([
       page.getByLabel(
         /submitter email/i
       ),
@@ -606,21 +780,71 @@ async function fillProgramReport(
       page.locator(
         'input[id*="email" i]'
       )
-    ],
+    ]);
+
+  if (!emailInput) {
+    /*
+    |--------------------------------------------------------------------------
+    | FALLBACK
+    |--------------------------------------------------------------------------
+    |
+    | The Indiana page visually labels the field "Submitter Email", but
+    | the HTML label may not actually be connected to the input.
+    |--------------------------------------------------------------------------
+    */
+
+    const inputs =
+      page.locator(
+        'input[type="text"]'
+      );
+
+    const count =
+      await inputs.count();
+
+    /*
+    | Based on the Indiana form shown during development, Post and District
+    | are select controls. Submitter Email is the first ordinary text field
+    | in the top portion of the form.
+    */
+
+    if (count > 0) {
+      await inputs
+        .first()
+        .fill(
+          SUBMITTER_EMAIL
+        );
+
+      console.log(
+        'Submitter Email filled using text-input fallback.'
+      );
+
+      return;
+    }
+
+    throw new Error(
+      'Could not locate Submitter Email input on Indiana reporting page.'
+    );
+  }
+
+  await emailInput.fill(
     SUBMITTER_EMAIL
   );
 
+  console.log(
+    'Submitter Email filled.'
+  );
+}
 
-  /*
-  |--------------------------------------------------------------------------
-  | DATE OF ACTIVITY
-  |--------------------------------------------------------------------------
-  */
 
-  await fillFirst(
-    page,
-    'Date of Activity',
-    [
+/*
+|--------------------------------------------------------------------------
+| FILL DATE
+|--------------------------------------------------------------------------
+*/
+
+async function fillDate(page, report) {
+  const dateInput =
+    await firstVisible([
       page.getByLabel(
         /date of activity/i
       ),
@@ -636,47 +860,39 @@ async function fillProgramReport(
       page.locator(
         'input[id*="date" i]'
       )
-    ],
-    report.date_of_service
-  );
+    ]);
 
-
-  /*
-  |--------------------------------------------------------------------------
-  | PROGRAM
-  |--------------------------------------------------------------------------
-  */
-
-  await selectCommunityService(
-    page
-  );
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | NUMERIC FIELDS
-  |--------------------------------------------------------------------------
-  |
-  | We first try semantic/name selectors.
-  | If those fail, we fall back to numeric input order visible on the
-  | Indiana Program Reporting form:
-  |
-  | 0 = Cumulative Hours
-  | 1 = Miles
-  | 2 = Members
-  | 3 = Dollars Spent/Donated
-  |--------------------------------------------------------------------------
-  */
-
-  const numericInputs =
-    page.locator(
-      'input[type="number"]'
+  if (!dateInput) {
+    throw new Error(
+      'Could not locate Date of Activity field.'
     );
+  }
+
+  await dateInput.fill(
+    String(
+      report.date_of_service || ''
+    )
+  );
+
+  console.log(
+    'Date of Activity filled.'
+  );
+}
 
 
+/*
+|--------------------------------------------------------------------------
+| FILL NUMERIC FIELDS
+|--------------------------------------------------------------------------
+*/
+
+async function fillNumericFields(
+  page,
+  report
+) {
   /*
   |--------------------------------------------------------------------------
-  | HOURS
+  | TRY SEMANTIC SELECTORS FIRST
   |--------------------------------------------------------------------------
   */
 
@@ -695,33 +911,6 @@ async function fillProgramReport(
       )
     ]);
 
-  if (
-    !hours &&
-    await numericInputs.count() >= 1
-  ) {
-    hours =
-      numericInputs.nth(0);
-  }
-
-  if (!hours) {
-    throw new Error(
-      'Could not locate Cumulative Hours field.'
-    );
-  }
-
-  await hours.fill(
-    String(
-      report.volunteer_hours ??
-      0
-    )
-  );
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | MILES
-  |--------------------------------------------------------------------------
-  */
 
   let miles =
     await firstVisible([
@@ -738,38 +927,11 @@ async function fillProgramReport(
       )
     ]);
 
-  if (
-    !miles &&
-    await numericInputs.count() >= 2
-  ) {
-    miles =
-      numericInputs.nth(1);
-  }
-
-  if (!miles) {
-    throw new Error(
-      'Could not locate Miles field.'
-    );
-  }
-
-  await miles.fill(
-    String(
-      report.miles_traveled ??
-      0
-    )
-  );
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | MEMBERS
-  |--------------------------------------------------------------------------
-  */
 
   let members =
     await firstVisible([
       page.getByLabel(
-        /members/i
+        /^members$/i
       ),
 
       page.locator(
@@ -781,34 +943,6 @@ async function fillProgramReport(
       )
     ]);
 
-  if (
-    !members &&
-    await numericInputs.count() >= 3
-  ) {
-    members =
-      numericInputs.nth(2);
-  }
-
-  if (!members) {
-    throw new Error(
-      'Could not locate Members field.'
-    );
-  }
-
-  await members.fill(
-    String(
-      report
-        .vfw_members_participating ??
-      1
-    )
-  );
-
-
-  /*
-  |--------------------------------------------------------------------------
-  | DOLLARS
-  |--------------------------------------------------------------------------
-  */
 
   let dollars =
     await firstVisible([
@@ -825,12 +959,88 @@ async function fillProgramReport(
       )
     ]);
 
+
+  /*
+  |--------------------------------------------------------------------------
+  | FALLBACK TO NUMBER INPUT ORDER
+  |--------------------------------------------------------------------------
+  |
+  | Indiana form order:
+  |
+  | 0 = Cumulative Hours
+  | 1 = Miles
+  | 2 = Members
+  | 3 = Dollars Spent / Donated
+  |--------------------------------------------------------------------------
+  */
+
+  const numericInputs =
+    page.locator(
+      'input[type="number"]'
+    );
+
+  const numericCount =
+    await numericInputs.count();
+
+
+  if (
+    !hours &&
+    numericCount >= 1
+  ) {
+    hours =
+      numericInputs.nth(0);
+  }
+
+
+  if (
+    !miles &&
+    numericCount >= 2
+  ) {
+    miles =
+      numericInputs.nth(1);
+  }
+
+
+  if (
+    !members &&
+    numericCount >= 3
+  ) {
+    members =
+      numericInputs.nth(2);
+  }
+
+
   if (
     !dollars &&
-    await numericInputs.count() >= 4
+    numericCount >= 4
   ) {
     dollars =
       numericInputs.nth(3);
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | VERIFY ALL FOUR FIELDS EXIST
+  |--------------------------------------------------------------------------
+  */
+
+  if (!hours) {
+    throw new Error(
+      'Could not locate Cumulative Hours field.'
+    );
+  }
+
+  if (!miles) {
+    throw new Error(
+      'Could not locate Miles field.'
+    );
+  }
+
+  if (!members) {
+    throw new Error(
+      'Could not locate Members field.'
+    );
   }
 
   if (!dollars) {
@@ -839,49 +1049,124 @@ async function fillProgramReport(
     );
   }
 
-  await dollars.fill(
-    String(
-      report.money_or_donations ??
-      0
-    )
-  );
-
 
   /*
   |--------------------------------------------------------------------------
-  | DESCRIPTION
+  | FILL VALUES
   |--------------------------------------------------------------------------
   */
 
-  const description =
-    report.proposed_description ||
-    report.activity_description ||
-    '';
+  await hours.fill(
+    String(
+      report.volunteer_hours ?? 0
+    )
+  );
 
-  await fillFirst(
-    page,
-    'Description',
-    [
-      page.getByLabel(
-        /description/i
-      ),
+  await miles.fill(
+    String(
+      report.miles_traveled ?? 0
+    )
+  );
 
-      page.locator(
-        'textarea'
-      ),
+  await members.fill(
+    String(
+      report.vfw_members_participating ??
+        1
+    )
+  );
 
-      page.locator(
-        '[contenteditable="true"]'
-      )
-    ],
-    description
+  await dollars.fill(
+    String(
+      report.money_or_donations ?? 0
+    )
+  );
+
+  console.log(
+    'Hours, Miles, Members, and Dollars filled.'
   );
 }
 
 
 /*
 |--------------------------------------------------------------------------
-| VERIFY FORM VALUES
+| FILL DESCRIPTION
+|--------------------------------------------------------------------------
+*/
+
+async function fillDescription(
+  page,
+  report
+) {
+  const description =
+    report.proposed_description ||
+    report.activity_description ||
+    '';
+
+  const textarea =
+    await firstVisible([
+      page.getByLabel(
+        /description/i
+      ),
+
+      page.locator(
+        'textarea'
+      )
+    ]);
+
+  if (!textarea) {
+    throw new Error(
+      'Could not locate Description field.'
+    );
+  }
+
+  await textarea.fill(
+    description
+  );
+
+  console.log(
+    'Description filled.'
+  );
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| FILL ENTIRE PROGRAM REPORT
+|--------------------------------------------------------------------------
+*/
+
+async function fillProgramReport(
+  page,
+  report
+) {
+  await fillSubmitterEmail(
+    page
+  );
+
+  await fillDate(
+    page,
+    report
+  );
+
+  await selectCommunityService(
+    page
+  );
+
+  await fillNumericFields(
+    page,
+    report
+  );
+
+  await fillDescription(
+    page,
+    report
+  );
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| VERIFY PREPARED FORM
 |--------------------------------------------------------------------------
 */
 
@@ -889,65 +1174,105 @@ async function verifyFilledValues(
   page,
   report
 ) {
-  const body =
-    await page.locator(
-      'body'
-    ).innerText();
+  /*
+  |--------------------------------------------------------------------------
+  | VERIFY DESCRIPTION
+  |--------------------------------------------------------------------------
+  */
 
-  if (
-    !/community service/i.test(
-      body
-    )
-  ) {
-    throw new Error(
-      'Community Service option is not visible after form preparation.'
-    );
-  }
-
-  const descriptionText =
-    report.proposed_description ||
-    report.activity_description ||
-    '';
+  const expectedDescription =
+    String(
+      report.proposed_description ||
+      report.activity_description ||
+      ''
+    ).trim();
 
   const textarea =
     await firstVisible([
-      page.locator(
-        'textarea'
-      )
+      page.locator('textarea')
     ]);
 
-  if (textarea) {
-    const value =
-      await textarea.inputValue();
+  if (!textarea) {
+    throw new Error(
+      'Unable to verify Indiana Description field.'
+    );
+  }
 
-    if (
-      descriptionText &&
-      value.trim() !==
-        descriptionText.trim()
+  const actualDescription =
+    String(
+      await textarea.inputValue()
+    ).trim();
+
+  if (
+    expectedDescription &&
+    actualDescription !==
+      expectedDescription
+  ) {
+    throw new Error(
+      'Indiana Description field did not retain the expected value.'
+    );
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | VERIFY COMMUNITY SERVICE RADIO
+  |--------------------------------------------------------------------------
+  */
+
+  const radios =
+    page.locator(
+      'input[type="radio"]'
+    );
+
+  const radioCount =
+    await radios.count();
+
+  if (radioCount > 0) {
+    let checked = false;
+
+    for (
+      let i = 0;
+      i < radioCount;
+      i++
     ) {
+      try {
+        if (
+          await radios
+            .nth(i)
+            .isChecked()
+        ) {
+          checked = true;
+          break;
+        }
+      } catch (_) {}
+    }
+
+    if (!checked) {
       throw new Error(
-        'Description field did not retain the expected value.'
+        'Community Service program selection could not be verified.'
       );
     }
   }
+
+  console.log(
+    'Prepared Indiana form passed verification.'
+  );
 }
 
 
 /*
 |--------------------------------------------------------------------------
-| FIND FINAL SUBMIT BUTTON
+| FIND FINAL INDIANA SUBMIT BUTTON
 |--------------------------------------------------------------------------
 */
 
-async function findSubmitButton(
-  page
-) {
+async function findSubmitButton(page) {
   return firstVisible([
     page.getByRole(
       'button',
       {
-        name:
-          /^submit$/i
+        name: /^submit$/i
       }
     ),
 
@@ -957,6 +1282,10 @@ async function findSubmitButton(
 
     page.locator(
       'button[type="submit"]'
+    ),
+
+    page.locator(
+      'input[value="SUBMIT" i]'
     )
   ]);
 }
@@ -968,9 +1297,7 @@ async function findSubmitButton(
 |--------------------------------------------------------------------------
 */
 
-async function prepareOrSubmit(
-  report
-) {
+async function prepareOrSubmit(report) {
   requireEnv(
     'VFW_MEMBERS_URL',
     MEMBERS_URL
@@ -991,6 +1318,13 @@ async function prepareOrSubmit(
     PASSWORD
   );
 
+
+  /*
+  |--------------------------------------------------------------------------
+  | START CHROMIUM
+  |--------------------------------------------------------------------------
+  */
+
   const browser =
     await chromium.launch({
       headless: true,
@@ -1002,9 +1336,17 @@ async function prepareOrSubmit(
       ]
     });
 
+
   let page;
 
+
   try {
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE BROWSER CONTEXT
+    |--------------------------------------------------------------------------
+    */
+
     const context =
       await browser.newContext({
         viewport: {
@@ -1013,27 +1355,38 @@ async function prepareOrSubmit(
         }
       });
 
+
     page =
       await context.newPage();
+
 
     page.setDefaultTimeout(
       15000
     );
 
+
     /*
     |--------------------------------------------------------------------------
-    | LOGIN
+    | STEP 1 — LOGIN
     |--------------------------------------------------------------------------
     */
+
+    console.log(
+      'STEP 1: Authenticating with VFW Indiana...'
+    );
 
     await login(page);
 
 
     /*
     |--------------------------------------------------------------------------
-    | PROGRAM REPORTING PAGE
+    | STEP 2 — OPEN PROGRAM REPORTING
     |--------------------------------------------------------------------------
     */
+
+    console.log(
+      'STEP 2: Opening Program Reporting...'
+    );
 
     await openProgramReporting(
       page
@@ -1042,9 +1395,13 @@ async function prepareOrSubmit(
 
     /*
     |--------------------------------------------------------------------------
-    | VERIFY POST / DISTRICT
+    | STEP 3 — VERIFY POST AND DISTRICT
     |--------------------------------------------------------------------------
     */
+
+    console.log(
+      'STEP 3: Verifying Post and District...'
+    );
 
     await verifyPostAndDistrict(
       page
@@ -1053,9 +1410,13 @@ async function prepareOrSubmit(
 
     /*
     |--------------------------------------------------------------------------
-    | FILL REPORT
+    | STEP 4 — POPULATE FORM
     |--------------------------------------------------------------------------
     */
+
+    console.log(
+      'STEP 4: Populating Indiana report...'
+    );
 
     await fillProgramReport(
       page,
@@ -1065,9 +1426,13 @@ async function prepareOrSubmit(
 
     /*
     |--------------------------------------------------------------------------
-    | VERIFY DATA
+    | STEP 5 — VERIFY FORM
     |--------------------------------------------------------------------------
     */
+
+    console.log(
+      'STEP 5: Verifying prepared report...'
+    );
 
     await verifyFilledValues(
       page,
@@ -1077,9 +1442,13 @@ async function prepareOrSubmit(
 
     /*
     |--------------------------------------------------------------------------
-    | SCREENSHOT BEFORE ANY FINAL SUBMIT
+    | STEP 6 — SCREENSHOT BEFORE SUBMISSION
     |--------------------------------------------------------------------------
     */
+
+    console.log(
+      'STEP 6: Capturing prepared report screenshot...'
+    );
 
     const preparedScreenshot =
       await screenshot(
@@ -1091,13 +1460,24 @@ async function prepareOrSubmit(
 
     /*
     |--------------------------------------------------------------------------
-    | DRY RUN
+    | SAFETY GATE
+    |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | Unless the Render environment variable is literally:
+    |
+    | VFW_ALLOW_FINAL_SUBMIT=true
+    |
+    | the Indiana Submit button WILL NOT be clicked.
     |--------------------------------------------------------------------------
     */
 
-    if (
-      !ALLOW_FINAL_SUBMIT
-    ) {
+    if (!ALLOW_FINAL_SUBMIT) {
+      console.log(
+        'DRY RUN COMPLETE. Final Indiana submission is disabled.'
+      );
+
       return {
         mode: 'prepared',
 
@@ -1112,14 +1492,13 @@ async function prepareOrSubmit(
 
     /*
     |--------------------------------------------------------------------------
-    | FINAL SUBMIT
-    |--------------------------------------------------------------------------
-    |
-    | This block only runs if:
-    |
-    | VFW_ALLOW_FINAL_SUBMIT=true
+    | STEP 7 — FIND FINAL SUBMIT BUTTON
     |--------------------------------------------------------------------------
     */
+
+    console.log(
+      'STEP 7: Final submission has been enabled.'
+    );
 
     const submitButton =
       await findSubmitButton(
@@ -1132,20 +1511,35 @@ async function prepareOrSubmit(
       );
     }
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | STEP 8 — SUBMIT
+    |--------------------------------------------------------------------------
+    */
+
+    console.log(
+      'STEP 8: Submitting report to VFW Indiana...'
+    );
+
     await submitButton.click();
 
-    await page.waitForLoadState(
-      'domcontentloaded'
-    ).catch(() => {});
+
+    await page
+      .waitForLoadState(
+        'domcontentloaded'
+      )
+      .catch(() => {});
+
 
     await page.waitForTimeout(
-      1000
+      1500
     );
 
 
     /*
     |--------------------------------------------------------------------------
-    | CAPTURE RESULT
+    | CAPTURE RESPONSE
     |--------------------------------------------------------------------------
     */
 
@@ -1159,6 +1553,7 @@ async function prepareOrSubmit(
         4000
       );
 
+
     const submittedScreenshot =
       await screenshot(
         page,
@@ -1169,7 +1564,7 @@ async function prepareOrSubmit(
 
     /*
     |--------------------------------------------------------------------------
-    | BASIC SUCCESS CHECK
+    | DETECT SUCCESS
     |--------------------------------------------------------------------------
     */
 
@@ -1178,11 +1573,18 @@ async function prepareOrSubmit(
         resultText
       );
 
+
     if (!success) {
       throw new Error(
         'Indiana form was submitted, but a clear success confirmation could not be detected. Review the captured screenshot before treating this report as successfully submitted.'
       );
     }
+
+
+    console.log(
+      'VFW Indiana report submission successful.'
+    );
+
 
     return {
       mode: 'submitted',
@@ -1200,11 +1602,18 @@ async function prepareOrSubmit(
   } catch (err) {
     /*
     |--------------------------------------------------------------------------
-    | ERROR SCREENSHOT
+    | CAPTURE ERROR SCREENSHOT
     |--------------------------------------------------------------------------
     */
 
+    console.error(
+      'VFW AUTOMATION ERROR:',
+      err.message
+    );
+
+
     let errorScreenshot = '';
+
 
     try {
       if (page) {
@@ -1214,21 +1623,46 @@ async function prepareOrSubmit(
             report.id,
             'error'
           );
+
+        console.error(
+          'Error screenshot:',
+          errorScreenshot
+        );
       }
-    } catch (_) {}
+    } catch (
+      screenshotError
+    ) {
+      console.error(
+        'Could not capture error screenshot:',
+        screenshotError.message
+      );
+    }
+
 
     const wrapped =
       new Error(
         err.message
       );
 
+
     wrapped.screenshot =
       errorScreenshot;
+
 
     throw wrapped;
 
   } finally {
+    /*
+    |--------------------------------------------------------------------------
+    | ALWAYS CLOSE BROWSER
+    |--------------------------------------------------------------------------
+    */
+
     await browser.close();
+
+    console.log(
+      'Chromium closed.'
+    );
   }
 }
 
