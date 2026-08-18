@@ -202,7 +202,7 @@ app.get('/api/stats', adminOnly, (req, res) => {
 });
 
 app.post('/api/dev/seed', adminOnly, (req, res) => {
-  if (process.env.NODE_ENV === 'production') return res.status(403).json({ error: 'Disabled in production' });
+  if (process.env.ENABLE_TEST_REPORTS !== 'true') return res.status(403).json({ error: 'Test reports are disabled. Set ENABLE_TEST_REPORTS=true temporarily in Render.' });
   const p = {
     name:'Test Comrade', email:'test@example.com', date_of_service:new Date().toISOString().slice(0,10),
     organization_or_community:'Hamilton County Food Pantry', activity_description:'Assisted with food distribution to local families.',
