@@ -1,0 +1,9 @@
+{
+  "name": "vfw-post-10003-windows-submit-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Windows submission bridge for the VFW Post 10003 Community Service Manager",
+  "main": "agent.js",
+  "scripts": { "start": "node agent.js" },
+  "dependencies": { "dotenv": "^16.4.5", "playwright": "^1.55.0" }
+}
