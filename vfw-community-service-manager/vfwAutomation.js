@@ -11,6 +11,9 @@ const DISTRICT = process.env.VFW_DISTRICT || '6';
 const SUBMITTER_EMAIL = process.env.VFW_SUBMITTER_EMAIL || 'vfwcarmel@yahoo.com';
 const ALLOW_FINAL_SUBMIT = String(process.env.VFW_ALLOW_FINAL_SUBMIT || 'false').toLowerCase() === 'true';
 
+const DESKTOP_CHROME_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36';
+
 function requireEnv(name, value) {
   if (!value) throw new Error(`${name} environment variable is not configured.`);
 }
@@ -53,9 +56,7 @@ function sanitizeUrl(url) {
   try {
     const u = new URL(url);
     for (const key of [...u.searchParams.keys()]) {
-      if (/pass|password|member|user|login|credential/i.test(key)) {
-        u.searchParams.set(key, '[REDACTED]');
-      }
+      if (/pass|password|member|user|login|credential/i.test(key)) u.searchParams.set(key, '[REDACTED]');
     }
     return u.toString();
   } catch (_) {
@@ -83,22 +84,11 @@ function sanitizePostData(postData) {
 
 function safeRequestHeaders(headers) {
   const allowed = [
-    'content-type',
-    'content-length',
-    'origin',
-    'referer',
-    'user-agent',
-    'accept',
-    'accept-language',
-    'sec-fetch-dest',
-    'sec-fetch-mode',
-    'sec-fetch-site',
-    'sec-fetch-user'
+    'content-type', 'content-length', 'origin', 'referer', 'user-agent', 'accept',
+    'accept-language', 'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-user'
   ];
   const out = {};
-  for (const key of allowed) {
-    if (headers[key]) out[key] = sanitizeText(headers[key], 500);
-  }
+  for (const key of allowed) if (headers[key]) out[key] = sanitizeText(headers[key], 500);
   return out;
 }
 
@@ -120,7 +110,6 @@ async function logLoginFormDiagnostics(page, loginForm) {
         valueLength: String(el.value || '').length
       }))
     }));
-
     console.log('LOGIN FORM ACTION ATTRIBUTE:', sanitizeUrl(info.actionAttribute || page.url()));
     console.log('LOGIN FORM RESOLVED ACTION:', sanitizeUrl(info.resolvedAction || page.url()));
     console.log('LOGIN FORM METHOD:', info.method);
@@ -139,7 +128,7 @@ async function login(page) {
 
   console.log('Opening VFW Indiana members page...');
   await page.goto(MEMBERS_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(1200);
 
   let passwordInput = await getPasswordField(page);
   let bodyText = await page.locator('body').innerText();
@@ -153,11 +142,8 @@ async function login(page) {
   }
 
   console.log('VFW login form detected. Authentication is required.');
-
   const loginForm = passwordInput.locator('xpath=ancestor::form[1]');
-  if ((await loginForm.count()) === 0) {
-    throw new Error('Could not locate the VFW Indiana login form containing the password field.');
-  }
+  if ((await loginForm.count()) === 0) throw new Error('Could not locate the VFW Indiana login form containing the password field.');
 
   await logLoginFormDiagnostics(page, loginForm);
 
@@ -169,7 +155,6 @@ async function login(page) {
     loginForm.locator('input[id*="user" i]'),
     loginForm.locator('input[type="text"]')
   ]);
-
   if (!memberInput) throw new Error('Could not locate the Member ID field inside the VFW login form.');
 
   await memberInput.fill(MEMBER_ID);
@@ -185,9 +170,7 @@ async function login(page) {
 
   const onRequest = request => {
     try {
-      if (!/vfwin\.org/i.test(request.url())) return;
-      if (request.method() !== 'POST') return;
-
+      if (!/vfwin\.org/i.test(request.url()) || request.method() !== 'POST') return;
       requestDiagnostics.push({
         method: request.method(),
         url: sanitizeUrl(request.url()),
@@ -206,7 +189,6 @@ async function login(page) {
       if (!/vfwin\.org/i.test(response.url())) return;
       const req = response.request();
       if (req.method() !== 'POST' && !req.isNavigationRequest()) return;
-
       responseDiagnostics.push({
         status: response.status(),
         statusText: response.statusText(),
@@ -226,7 +208,6 @@ async function login(page) {
     loginForm.locator('input[type="image"][name="login" i]'),
     loginForm.locator('input[type="image"]')
   ]);
-
   const normalSubmit = await firstVisible([
     loginForm.locator('input[type="submit"]'),
     loginForm.locator('button[type="submit"]'),
@@ -273,20 +254,14 @@ async function login(page) {
   if (/invalid.*password|incorrect.*password|login failed|invalid.*member/i.test(bodyText)) {
     throw new Error('VFW Indiana rejected the login credentials.');
   }
-
   if (/500\s*-?\s*internal server error/i.test(`${title} ${bodyText}`)) {
-    throw new Error('VFW Indiana returned HTTP 500 immediately after login. The sanitized POST request diagnostics are now available in Render logs.');
+    throw new Error('VFW Indiana returned HTTP 500 immediately after login. Browser masking was enabled; review the sanitized request diagnostics in Render logs.');
   }
-
-  if (passwordInput) {
-    throw new Error('The VFW Indiana login form is still visible after the login attempt. Authentication did not complete.');
-  }
-
+  if (passwordInput) throw new Error('The VFW Indiana login form is still visible after the login attempt. Authentication did not complete.');
   if (/change profile|program reporting|log out|members only/i.test(bodyText)) {
     console.log('VFW Indiana authentication successful.');
     return;
   }
-
   throw new Error('VFW Indiana login completed, but an authenticated member page could not be positively confirmed.');
 }
 
@@ -295,27 +270,19 @@ async function openProgramReporting(page) {
   console.log('Opening VFW Indiana Program Reporting page...');
   await page.goto(PROGRAM_REPORTING_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await page.waitForTimeout(1000);
-  if (await getPasswordField(page)) {
-    throw new Error('VFW Indiana redirected the automation back to login. The authenticated session was not retained.');
-  }
+  if (await getPasswordField(page)) throw new Error('VFW Indiana redirected the automation back to login. The authenticated session was not retained.');
   const text = await page.locator('body').innerText();
-  if (!/program reporting/i.test(text)) {
-    throw new Error(`Indiana Program Reporting page did not load as expected. Current URL: ${page.url()}`);
-  }
+  if (!/program reporting/i.test(text)) throw new Error(`Indiana Program Reporting page did not load as expected. Current URL: ${page.url()}`);
 }
 
 async function verifyPostAndDistrict(page) {
   const selects = page.locator('select');
   const count = await selects.count();
   if (count >= 1) {
-    try {
-      if (String(await selects.nth(0).inputValue()) !== String(POST)) await selects.nth(0).selectOption(String(POST));
-    } catch (_) {}
+    try { if (String(await selects.nth(0).inputValue()) !== String(POST)) await selects.nth(0).selectOption(String(POST)); } catch (_) {}
   }
   if (count >= 2) {
-    try {
-      if (String(await selects.nth(1).inputValue()) !== String(DISTRICT)) await selects.nth(1).selectOption(String(DISTRICT));
-    } catch (_) {}
+    try { if (String(await selects.nth(1).inputValue()) !== String(DISTRICT)) await selects.nth(1).selectOption(String(DISTRICT)); } catch (_) {}
   }
 }
 
@@ -356,29 +323,22 @@ async function selectCommunityService(page) {
     return;
   }
   const text = page.getByText('Community Service', { exact: true });
-  if ((await text.count()) > 0) {
-    await text.first().click();
-    return;
-  }
+  if ((await text.count()) > 0) { await text.first().click(); return; }
   throw new Error('Could not locate Community Service program option.');
 }
 
 async function fillNumericFields(page, report) {
   const numeric = page.locator('input[type="number"]');
   const count = await numeric.count();
-
   let hours = await firstVisible([page.getByLabel(/cumulative hours|hours/i), page.locator('input[name*="hour" i]'), page.locator('input[id*="hour" i]')]);
   let miles = await firstVisible([page.getByLabel(/miles/i), page.locator('input[name*="mile" i]'), page.locator('input[id*="mile" i]')]);
   let members = await firstVisible([page.getByLabel(/^members$/i), page.locator('input[name*="member" i]'), page.locator('input[id*="member" i]')]);
   let dollars = await firstVisible([page.getByLabel(/dollars.*spent|dollars.*donated|spent.*donated/i), page.locator('input[name*="dollar" i]'), page.locator('input[id*="dollar" i]')]);
-
   if (!hours && count >= 1) hours = numeric.nth(0);
   if (!miles && count >= 2) miles = numeric.nth(1);
   if (!members && count >= 3) members = numeric.nth(2);
   if (!dollars && count >= 4) dollars = numeric.nth(3);
-
   if (!hours || !miles || !members || !dollars) throw new Error('Could not locate all Indiana numeric fields.');
-
   await hours.fill(String(report.volunteer_hours ?? 0));
   await miles.fill(String(report.miles_traveled ?? 0));
   await members.fill(String(report.vfw_members_participating ?? 1));
@@ -404,9 +364,7 @@ async function verifyFilledValues(page, report) {
   if (!textarea) throw new Error('Unable to verify Indiana Description field.');
   const expected = String(report.proposed_description || report.activity_description || '').trim();
   const actual = String(await textarea.inputValue()).trim();
-  if (expected && actual !== expected) {
-    throw new Error('Indiana Description field did not retain the expected value.');
-  }
+  if (expected && actual !== expected) throw new Error('Indiana Description field did not retain the expected value.');
 }
 
 async function findSubmitButton(page) {
@@ -426,21 +384,40 @@ async function prepareOrSubmit(report) {
 
   const browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled'
+    ]
   });
 
   let page;
   try {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 1100 },
+      userAgent: DESKTOP_CHROME_UA,
+      locale: 'en-US',
+      timezoneId: 'America/Indiana/Indianapolis',
+      extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' }
+    });
+
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      if (!window.chrome) window.chrome = { runtime: {} };
+    });
+
     page = await context.newPage();
     page.setDefaultTimeout(15000);
 
+    console.log('BROWSER PROFILE: normal desktop Chrome UA with automation indicators reduced.');
     console.log('STEP 1: Authenticating with VFW Indiana...');
     await login(page);
 
     console.log('STEP 2: Opening Program Reporting...');
     await openProgramReporting(page);
-
     await verifyPostAndDistrict(page);
     await fillProgramReport(page, report);
     await verifyFilledValues(page, report);
@@ -466,9 +443,7 @@ async function prepareOrSubmit(report) {
     const submittedScreenshot = await screenshot(page, report.id, 'submitted');
     const success = /thank|success|submitted|report.*received|activity.*entered/i.test(resultText);
 
-    if (!success) {
-      throw new Error('Indiana form was submitted, but a clear success confirmation could not be detected. Review the captured screenshot before treating this report as successfully submitted.');
-    }
+    if (!success) throw new Error('Indiana form was submitted, but a clear success confirmation could not be detected. Review the captured screenshot before treating this report as successfully submitted.');
 
     return {
       mode: 'submitted',
@@ -479,10 +454,7 @@ async function prepareOrSubmit(report) {
   } catch (err) {
     console.error('VFW AUTOMATION ERROR:', err.message);
     let errorScreenshot = '';
-    try {
-      if (page) errorScreenshot = await screenshot(page, report.id, 'error');
-    } catch (_) {}
-
+    try { if (page) errorScreenshot = await screenshot(page, report.id, 'error'); } catch (_) {}
     const wrapped = new Error(err.message);
     wrapped.screenshot = errorScreenshot;
     throw wrapped;
