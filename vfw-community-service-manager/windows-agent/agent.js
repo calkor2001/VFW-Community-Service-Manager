@@ -63,7 +63,6 @@ async function login(page) {
   const passwordCount = await password.count();
   const loginCount = await loginButton.count();
 
-  // If the login form is absent, see whether we are already authenticated.
   if (passwordCount === 0) {
     const programLink = page.getByText('Program Reporting', { exact: true });
     if ((await programLink.count()) > 0) {
@@ -84,8 +83,6 @@ async function login(page) {
     throw new Error('Could not map the VFW Indiana login controls.');
   }
 
-  // This legacy page reports visibility inconsistently to automation, so use the exact
-  // named controls and force the interaction rather than rejecting them as hidden.
   await username.fill(VFW_MEMBER_ID, { force: true });
   await password.fill(VFW_PASSWORD, { force: true });
   console.log('VFW credentials entered locally.');
@@ -133,7 +130,6 @@ async function fillReportingForm(page, report) {
     page.locator('input[name*="email" i]'),
     page.locator('input[id*="email" i]')
   ]);
-
   const visibleTextInputs = page.locator('input[type="text"]:visible');
   if (!email && (await visibleTextInputs.count()) > 0) email = visibleTextInputs.nth(0);
   if (!email) throw new Error('Could not locate Submitter Email field.');
@@ -202,13 +198,6 @@ async function fillReportingForm(page, report) {
   ]);
   if (!description) throw new Error('Could not locate Description field.');
   await description.fill(String(report.proposed_description || report.activity_description || ''));
-
-  const submit = await firstVisible([
-    page.getByRole('button', { name: /^submit$/i }),
-    page.locator('input[type="submit"]'),
-    page.locator('button[type="submit"]')
-  ]);
-  if (!submit) throw new Error('Program Reporting form was filled, but the final SUBMIT control could not be located.');
 
   console.log('VFW Indiana form populated successfully. FINAL SUBMIT WAS NOT CLICKED.');
 }
