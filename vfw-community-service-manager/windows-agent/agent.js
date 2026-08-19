@@ -60,7 +60,6 @@ async function login(page) {
     page.locator('input[type="password"]')
   ]);
 
-  // If there is no password box and Program Reporting is present, this browser session is already authenticated.
   if (!password) {
     const programLink = page.getByText('Program Reporting', { exact: true });
     if ((await programLink.count()) > 0) {
@@ -174,11 +173,9 @@ async function fillReportingForm(page, report) {
   if (!members && (await numberInputs.count()) >= 3) members = numberInputs.nth(2);
   if (!dollars && (await numberInputs.count()) >= 4) dollars = numberInputs.nth(3);
 
-  // Older versions of this form may use ordinary text inputs for the four numeric fields.
   if (!hours || !miles || !members || !dollars) {
     const textInputs = page.locator('input[type="text"]:visible');
     const count = await textInputs.count();
-    // first text input is Submitter Email; numeric fields follow it in the form.
     if (!hours && count >= 2) hours = textInputs.nth(1);
     if (!miles && count >= 3) miles = textInputs.nth(2);
     if (!members && count >= 4) members = textInputs.nth(3);
@@ -199,7 +196,6 @@ async function fillReportingForm(page, report) {
   if (!description) throw new Error('Could not locate Description field.');
   await description.fill(String(report.proposed_description || report.activity_description || ''));
 
-  // Safety check: locate SUBMIT but never click it in this dry-run version.
   const submit = await firstVisible([
     page.getByRole('button', { name: /^submit$/i }),
     page.locator('input[type="submit"]'),
@@ -211,9 +207,15 @@ async function fillReportingForm(page, report) {
 }
 
 async function prepareInVfw(report) {
-  const browser = await chromium.launch({ channel: 'chrome', headless: false });
-  const context = await browser.newContext({ viewport: null });
-  const page = await context.newPage();
+  // Important: launchPersistentContext lets the visible Chrome window survive independently
+  // while the agent waits for the user to close the page manually.
+  const context = await chromium.launchPersistentContext('', {
+    channel: 'chrome',
+    headless: false,
+    viewport: null
+  });
+  const pages = context.pages();
+  const page = pages.length ? pages[0] : await context.newPage();
 
   try {
     console.log(`Preparing VFW Indiana form locally for report #${report.id}...`);
@@ -227,11 +229,16 @@ async function prepareInVfw(report) {
     });
 
     console.log(`Report #${report.id} marked PREPARED in the dashboard.`);
-    console.log('Review the populated VFW form in Chrome. Close that Chrome window when you are finished reviewing it.');
+    console.log('Chrome will remain open for review. Close that Chrome window when you are finished.');
 
-    await new Promise(resolve => browser.on('disconnected', resolve));
-  } finally {
-    try { if (browser.isConnected()) await browser.close(); } catch (_) {}
+    await new Promise(resolve => context.on('close', resolve));
+  } catch (err) {
+    // If preparation succeeded but the prepared callback failed, keep Chrome open anyway
+    // so the user can still inspect the form instead of losing the work.
+    console.error(err.message || err);
+    console.log('Keeping Chrome open for manual review despite the error. Close the Chrome window when finished.');
+    await new Promise(resolve => context.on('close', resolve));
+    throw err;
   }
 }
 
