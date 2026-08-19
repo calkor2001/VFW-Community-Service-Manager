@@ -55,13 +55,16 @@ async function login(page) {
   await page.goto(MEMBERS_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(1000);
 
-  let password = await firstVisible([
-    page.locator('input[name="password"]'),
-    page.locator('input[type="password"]'),
-    page.locator('input').filter({ has: page.locator('xpath=..') })
-  ]);
+  const username = page.locator('input[name="username"]').first();
+  const password = page.locator('input[name="password"]').first();
+  const loginButton = page.locator('input[type="image"][name="login"]').first();
 
-  if (!password) {
+  const usernameCount = await username.count();
+  const passwordCount = await password.count();
+  const loginCount = await loginButton.count();
+
+  // If the login form is absent, see whether we are already authenticated.
+  if (passwordCount === 0) {
     const programLink = page.getByText('Program Reporting', { exact: true });
     if ((await programLink.count()) > 0) {
       console.log('Existing authenticated VFW Indiana session detected.');
@@ -70,42 +73,7 @@ async function login(page) {
     throw new Error('Could not find the VFW login form or an authenticated member page.');
   }
 
-  // Legacy VFW markup is inconsistent, so locate controls globally first.
-  let username = await firstVisible([
-    page.locator('input[name="username"]'),
-    page.locator('input[type="text"]'),
-    page.locator('input').nth(0)
-  ]);
-
-  let loginButton = await firstVisible([
-    page.locator('input[type="image"][name="login"]'),
-    page.locator('input[name="login"]'),
-    page.locator('input[type="image"]'),
-    page.locator('input[type="submit"]'),
-    page.getByRole('button', { name: /login|log in|sign in/i })
-  ]);
-
-  // Fall back to controls inside the password field's nearest form if needed.
-  if (!username || !loginButton) {
-    const form = password.locator('xpath=ancestor::form[1]');
-    if ((await form.count()) > 0) {
-      if (!username) {
-        username = await firstVisible([
-          form.locator('input[name="username"]'),
-          form.locator('input[type="text"]')
-        ]);
-      }
-      if (!loginButton) {
-        loginButton = await firstVisible([
-          form.locator('input[type="image"][name="login"]'),
-          form.locator('input[type="image"]'),
-          form.locator('input[type="submit"]')
-        ]);
-      }
-    }
-  }
-
-  if (!username || !password || !loginButton) {
+  if (usernameCount === 0 || passwordCount === 0 || loginCount === 0) {
     const inputs = await page.locator('input').evaluateAll(nodes => nodes.map(n => ({
       type: n.type || '',
       name: n.name || '',
@@ -116,22 +84,27 @@ async function login(page) {
     throw new Error('Could not map the VFW Indiana login controls.');
   }
 
-  await username.fill(VFW_MEMBER_ID);
-  await password.fill(VFW_PASSWORD);
+  // This legacy page reports visibility inconsistently to automation, so use the exact
+  // named controls and force the interaction rather than rejecting them as hidden.
+  await username.fill(VFW_MEMBER_ID, { force: true });
+  await password.fill(VFW_PASSWORD, { force: true });
   console.log('VFW credentials entered locally.');
 
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-    loginButton.click({ position: { x: 5, y: 5 } })
+    loginButton.click({ position: { x: 5, y: 5 }, force: true })
   ]);
-  await page.waitForTimeout(1400);
+  await page.waitForTimeout(1500);
 
   const body = await page.locator('body').innerText();
   if (/500\s*-?\s*internal server error/i.test(body)) throw new Error('VFW Indiana returned an HTTP 500 during local login.');
   if (/invalid.*password|incorrect.*password|login failed|invalid.*member/i.test(body)) throw new Error('VFW Indiana rejected the local login credentials.');
 
   const programLink = page.getByText('Program Reporting', { exact: true });
-  if ((await programLink.count()) === 0) throw new Error('Local VFW login completed, but Program Reporting was not found.');
+  if ((await programLink.count()) === 0) {
+    console.log('POST-LOGIN URL:', page.url());
+    throw new Error('Local VFW login completed, but Program Reporting was not found.');
+  }
   console.log('VFW Indiana login successful.');
 }
 
