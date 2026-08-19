@@ -53,11 +53,12 @@ async function firstVisible(locators) {
 async function login(page) {
   console.log('Opening VFW Indiana Members Only page...');
   await page.goto(MEMBERS_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(1000);
 
-  const password = await firstVisible([
+  let password = await firstVisible([
     page.locator('input[name="password"]'),
-    page.locator('input[type="password"]')
+    page.locator('input[type="password"]'),
+    page.locator('input').filter({ has: page.locator('xpath=..') })
   ]);
 
   if (!password) {
@@ -69,18 +70,51 @@ async function login(page) {
     throw new Error('Could not find the VFW login form or an authenticated member page.');
   }
 
-  const form = password.locator('xpath=ancestor::form[1]');
-  const username = await firstVisible([
-    form.locator('input[name="username"]'),
-    form.locator('input[type="text"]')
-  ]);
-  const loginButton = await firstVisible([
-    form.locator('input[type="image"][name="login"]'),
-    form.locator('input[type="image"]'),
-    form.locator('input[type="submit"]')
+  // Legacy VFW markup is inconsistent, so locate controls globally first.
+  let username = await firstVisible([
+    page.locator('input[name="username"]'),
+    page.locator('input[type="text"]'),
+    page.locator('input').nth(0)
   ]);
 
-  if (!username || !loginButton) throw new Error('Could not map the VFW Indiana login controls.');
+  let loginButton = await firstVisible([
+    page.locator('input[type="image"][name="login"]'),
+    page.locator('input[name="login"]'),
+    page.locator('input[type="image"]'),
+    page.locator('input[type="submit"]'),
+    page.getByRole('button', { name: /login|log in|sign in/i })
+  ]);
+
+  // Fall back to controls inside the password field's nearest form if needed.
+  if (!username || !loginButton) {
+    const form = password.locator('xpath=ancestor::form[1]');
+    if ((await form.count()) > 0) {
+      if (!username) {
+        username = await firstVisible([
+          form.locator('input[name="username"]'),
+          form.locator('input[type="text"]')
+        ]);
+      }
+      if (!loginButton) {
+        loginButton = await firstVisible([
+          form.locator('input[type="image"][name="login"]'),
+          form.locator('input[type="image"]'),
+          form.locator('input[type="submit"]')
+        ]);
+      }
+    }
+  }
+
+  if (!username || !password || !loginButton) {
+    const inputs = await page.locator('input').evaluateAll(nodes => nodes.map(n => ({
+      type: n.type || '',
+      name: n.name || '',
+      id: n.id || '',
+      src: n.getAttribute('src') || ''
+    })));
+    console.log('LOGIN FIELD DEBUG:', JSON.stringify(inputs));
+    throw new Error('Could not map the VFW Indiana login controls.');
+  }
 
   await username.fill(VFW_MEMBER_ID);
   await password.fill(VFW_PASSWORD);
@@ -90,7 +124,7 @@ async function login(page) {
     page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
     loginButton.click({ position: { x: 5, y: 5 } })
   ]);
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1400);
 
   const body = await page.locator('body').innerText();
   if (/500\s*-?\s*internal server error/i.test(body)) throw new Error('VFW Indiana returned an HTTP 500 during local login.');
@@ -207,8 +241,6 @@ async function fillReportingForm(page, report) {
 }
 
 async function prepareInVfw(report) {
-  // Important: launchPersistentContext lets the visible Chrome window survive independently
-  // while the agent waits for the user to close the page manually.
   const context = await chromium.launchPersistentContext('', {
     channel: 'chrome',
     headless: false,
@@ -223,18 +255,19 @@ async function prepareInVfw(report) {
     await openReporting(page);
     await fillReportingForm(page, report);
 
-    await manager(`/api/agent/reports/${report.id}/prepared`, {
-      method: 'POST',
-      body: JSON.stringify({ note: 'VFW Indiana form populated locally. Awaiting human review; final SUBMIT was not clicked.' })
-    });
+    try {
+      await manager(`/api/agent/reports/${report.id}/prepared`, {
+        method: 'POST',
+        body: JSON.stringify({ note: 'VFW Indiana form populated locally. Awaiting human review; final SUBMIT was not clicked.' })
+      });
+      console.log(`Report #${report.id} marked PREPARED in the dashboard.`);
+    } catch (callbackErr) {
+      console.error('Could not mark report Prepared in dashboard:', callbackErr.message || callbackErr);
+    }
 
-    console.log(`Report #${report.id} marked PREPARED in the dashboard.`);
     console.log('Chrome will remain open for review. Close that Chrome window when you are finished.');
-
     await new Promise(resolve => context.on('close', resolve));
   } catch (err) {
-    // If preparation succeeded but the prepared callback failed, keep Chrome open anyway
-    // so the user can still inspect the form instead of losing the work.
     console.error(err.message || err);
     console.log('Keeping Chrome open for manual review despite the error. Close the Chrome window when finished.');
     await new Promise(resolve => context.on('close', resolve));
